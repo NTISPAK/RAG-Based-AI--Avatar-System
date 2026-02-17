@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NTIS Policy Assistant</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <div class="logo-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <span>NTIS Assistant</span>
+                </div>
+            </div>
+            
+            <div class="sidebar-content">
+                <div class="nav-section">
+                    <span class="nav-label">Quick Actions</span>
+                    <button class="nav-item active" onclick="askQuestion('What is the refund policy?')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                        Refund Policy
+                    </button>
+                    <button class="nav-item" onclick="askQuestion('When do interpreters get paid?')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                            <line x1="1" y1="10" x2="23" y2="10"></line>
+                        </svg>
+                        Payment Terms
+                    </button>
+                    <button class="nav-item" onclick="askQuestion('What is the invoicing process?')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="16" y1="13" x2="8" y2="13"></line>
+                            <line x1="16" y1="17" x2="8" y2="17"></line>
+                        </svg>
+                        Invoicing
+                    </button>
+                    <button class="nav-item" onclick="askQuestion('Who approves refunds?')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                        Approval Process
+                    </button>
+                </div>
+            </div>
+            
+            <div class="sidebar-footer">
+                <div class="status-badge">
+                    <span class="status-dot"></span>
+                    <span>AI Online</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="main">
+            <header class="header">
+                <div class="header-left">
+                    <button class="menu-btn" onclick="toggleSidebar()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                    </button>
+                    <div class="header-title">
+                        <h1>Policy Assistant</h1>
+                        <span class="header-subtitle">Ask anything about NTIS policies</span>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <button class="icon-btn" onclick="clearChat()" title="Clear chat">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                </div>
+            </header>
+
+            <div class="chat-area" id="chatArea">
+                <div class="chat-messages" id="chatMessages">
+                    <!-- Welcome Message -->
+                    <div class="welcome-container">
+                        <div class="welcome-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                            </svg>
+                        </div>
+                        <h2>Welcome to NTIS Policy Assistant</h2>
+                        <p>I'm here to help you understand our policies on invoicing, refunds, and payments. Ask me anything!</p>
+                        
+                        <div class="suggestion-chips">
+                            <button class="chip" onclick="askQuestion('What is the refund policy?')">What is the refund policy?</button>
+                            <button class="chip" onclick="askQuestion('When do interpreters get paid?')">When do interpreters get paid?</button>
+                            <button class="chip" onclick="askQuestion('How do I submit an invoice?')">How do I submit an invoice?</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <div class="input-container">
+                    <textarea 
+                        id="userInput" 
+                        placeholder="Ask a question about NTIS policies..." 
+                        rows="1"
+                        onkeydown="handleKeyDown(event)"
+                    ></textarea>
+                    <button id="sendBtn" onclick="sendMessage()" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
+                </div>
+                <p class="input-footer">NTIS Policy Assistant can make mistakes. Verify important information.</p>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const chatMessages = document.getElementById('chatMessages');
+        const userInput = document.getElementById('userInput');
+        const sendBtn = document.getElementById('sendBtn');
+        let isProcessing = false;
+
+        // Auto-resize textarea
+        userInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+            sendBtn.disabled = !this.value.trim();
+        });
+
+        function handleKeyDown(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (!sendBtn.disabled && !isProcessing) {
+                    sendMessage();
+                }
+            }
+        }
+
+        function toggleSidebar() {
+            document.querySelector('.sidebar').classList.toggle('open');
+        }
+
+        function clearChat() {
+            chatMessages.innerHTML = `
+                <div class="welcome-container">
+                    <div class="welcome-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <h2>Welcome to NTIS Policy Assistant</h2>
+                    <p>I'm here to help you understand our policies on invoicing, refunds, and payments. Ask me anything!</p>
+                    
+                    <div class="suggestion-chips">
+                        <button class="chip" onclick="askQuestion('What is the refund policy?')">What is the refund policy?</button>
+                        <button class="chip" onclick="askQuestion('When do interpreters get paid?')">When do interpreters get paid?</button>
+                        <button class="chip" onclick="askQuestion('How do I submit an invoice?')">How do I submit an invoice?</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function askQuestion(question) {
+            userInput.value = question;
+            userInput.dispatchEvent(new Event('input'));
+            sendMessage();
+            
+            // Close sidebar on mobile
+            document.querySelector('.sidebar').classList.remove('open');
+        }
+
+        function removeWelcome() {
+            const welcome = document.querySelector('.welcome-container');
+            if (welcome) {
+                welcome.remove();
+            }
+        }
+
+        function addMessage(content, type) {
+            removeWelcome();
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            
+            const avatar = document.createElement('div');
+            avatar.className = 'avatar';
+            
+            if (type === 'assistant') {
+                avatar.innerHTML = `
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                `;
+            } else {
+                avatar.innerHTML = `
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                `;
+            }
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            
+            const label = document.createElement('span');
+            label.className = 'message-label';
+            label.textContent = type === 'assistant' ? 'NTIS Assistant' : 'You';
+            
+            const text = document.createElement('div');
+            text.className = 'message-text';
+            text.textContent = content;
+            
+            contentDiv.appendChild(label);
+            contentDiv.appendChild(text);
+            
+            messageDiv.appendChild(avatar);
+            messageDiv.appendChild(contentDiv);
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function showTyping() {
+            removeWelcome();
+            
+            const typingDiv = document.createElement('div');
+            typingDiv.className = 'message assistant';
+            typingDiv.id = 'typingIndicator';
+            
+            typingDiv.innerHTML = `
+                <div class="avatar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </div>
+                <div class="message-content">
+                    <span class="message-label">NTIS Assistant</span>
+                    <div class="typing-indicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                </div>
+            `;
+            
+            chatMessages.appendChild(typingDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function hideTyping() {
+            const typing = document.getElementById('typingIndicator');
+            if (typing) typing.remove();
+        }
+
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message || isProcessing) return;
+
+            isProcessing = true;
+            addMessage(message, 'user');
+            userInput.value = '';
+            userInput.style.height = 'auto';
+            sendBtn.disabled = true;
+            showTyping();
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ message: message })
+                });
+
+                const data = await response.json();
+                hideTyping();
+
+                if (response.ok && data.response) {
+                    addMessage(data.response, 'assistant');
+                } else {
+                    addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
+                }
+            } catch (error) {
+                hideTyping();
+                addMessage('Connection error. Please check your internet connection and try again.', 'assistant');
+            }
+
+            isProcessing = false;
+            userInput.focus();
+        }
+    </script>
+</body>
+</html>
