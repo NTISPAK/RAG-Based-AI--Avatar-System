@@ -1,22 +1,60 @@
 """
 NTIS Policy RAG Chatbot - FastAPI Backend
+==========================================
 Uses Qdrant for vector storage, HuggingFace embeddings, and Gemini LLM.
+Integrates Firebase Firestore in STRICTLY READ-ONLY mode for user data.
+
+SECURITY: Firebase integration is READ-ONLY.
+- No write/update/delete operations allowed
+- All write attempts are blocked and raise PermissionError
+- User data isolation is enforced
 """
 import os
+import logging
+from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel, Field
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_qdrant import QdrantVectorStore
-from langchain_classic.chains import RetrievalQA
 from langchain_core.prompts import PromptTemplate
 from qdrant_client import QdrantClient
 
+# Firebase integration modules (READ-ONLY)
+from firebase_schema_explorer import (
+    get_schema_explorer,
+    discover_firestore_schema,
+    get_firestore_schema
+)
+from firebase_read_service import (
+    get_read_service,
+    read_user_data,
+    format_firebase_data_for_llm,
+    FirebaseReadResult
+)
+from query_intent_classifier import (
+    get_classifier,
+    classify_query,
+    should_query_firebase,
+    IntentClassification,
+    QueryIntent
+)
+from firebase_auth import (
+    verify_firebase_token,
+    require_auth,
+    optional_auth,
+    AuthenticatedUser
+)
+
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────
 # CONFIGURATION
@@ -26,43 +64,33 @@ QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = "policy_docs"
 
 # ─────────────────────────────────────────────
-# SYSTEM PROMPT
+# SYSTEM PROMPT (Enhanced with Firebase data support)
 # ─────────────────────────────────────────────
-SYSTEM_PROMPT = """You are the NTIS Policy Assistant for a translation and interpreting company.
+SYSTEM_PROMPT = """You are the NTIS Policy Assistant, a helpful AI for a translation and interpreting company.
 
-STRICT RULES:
-1. Use ONLY the retrieved context below to answer questions.
-2. NEVER hallucinate or make up information.
-3. If the answer is not in the context, respond exactly:
-   "I do not have that information in the policy document."
-4. Be concise and professional.
+Your role is to answer questions using ONLY the information provided below. Be conversational, friendly, and professional.
 
-POLICY ENFORCEMENT:
-- Refund is allowed ONLY if:
-  * Service not started after payment
-  * Company cancelled service
-  * Duplicate payment made
-  * Delivered work does not meet agreed scope AND issue cannot be resolved
+DATA SOURCES:
+1. POLICY DOCUMENTS - Company policies (refunds, payments, invoicing)
+2. USER DATA - Personal bookings, profile, orders (if user is logged in)
 
-- Refund is NOT allowed if:
-  * Service fully completed and delivered
-  * Customer caused delay or late information
-  * Customer approved work then changed requirements
-  * Service marked non-refundable
+CRITICAL RULES:
+1. Answer ONLY using the context and user data provided below
+2. NEVER make up or assume information not in the context
+3. If information is missing, say: "I don't have that information in my current data."
+4. Be concise but complete - give all relevant details
+5. Use natural language - don't just copy-paste from documents
+6. For user data, present it clearly and only show what's relevant to the question
 
-- Interpreter Payment: Processed within 21 working days from invoice approval date.
-
-- Approval Hierarchy:
-  * Accounts Officer → routine confirmations
-  * Accounts Manager → partial refunds/adjustments
-  * Senior Management/Director → full refunds or exceptional cases
-
-CONTEXT:
+CONTEXT FROM POLICY DOCUMENTS:
 {context}
 
-QUESTION: {question}
+USER'S PERSONAL DATA:
+{user_data}
 
-ANSWER (based only on context above):"""
+USER QUESTION: {question}
+
+YOUR ANSWER (natural, conversational, based only on the information above):"""
 
 # ─────────────────────────────────────────────
 # INITIALIZE COMPONENTS
@@ -99,22 +127,44 @@ llm = ChatGoogleGenerativeAI(
     google_api_key=GOOGLE_API_KEY,
 )
 
-# Create prompt template
+# Create prompt template (with user_data for Firebase integration)
 prompt_template = PromptTemplate(
     template=SYSTEM_PROMPT,
-    input_variables=["context", "question"]
-)
-
-# Create RetrievalQA chain
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    chain_type="stuff",
-    retriever=retriever,
-    return_source_documents=True,
-    chain_type_kwargs={"prompt": prompt_template}
+    input_variables=["context", "user_data", "question"]
 )
 
 print("Initialization complete!")
+
+# ─────────────────────────────────────────────
+# FIREBASE INITIALIZATION (READ-ONLY)
+# ─────────────────────────────────────────────
+firebase_schema = None
+firebase_enabled = False
+
+print("\nInitializing Firebase integration (READ-ONLY)...")
+try:
+    # Discover schema at startup (runs once, then cached)
+    firebase_schema = discover_firestore_schema()
+    
+    # Initialize the classifier with schema
+    classifier = get_classifier(firebase_schema)
+    
+    # Initialize read service
+    read_service = get_read_service()
+    
+    firebase_enabled = True
+    collection_count = len(firebase_schema.get("collections", {}))
+    print(f"✓ Firebase schema discovered: {collection_count} collections")
+    print(f"✓ Schema cached to: firebase_schema.json")
+    print("✓ Firebase READ-ONLY mode active")
+    
+except FileNotFoundError as e:
+    print(f"⚠ Firebase credentials not found: {e}")
+    print("  Set FIREBASE_CREDENTIALS_PATH in .env")
+    print("  Continuing without Firebase integration...")
+except Exception as e:
+    print(f"⚠ Firebase initialization failed: {e}")
+    print("  Continuing without Firebase integration...")
 
 # ─────────────────────────────────────────────
 # FASTAPI APP
@@ -125,9 +175,20 @@ app = FastAPI(title="NTIS Policy Assistant")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Request model
+# Request/Response models
 class ChatRequest(BaseModel):
+    """Chat request with optional user ID for Firebase queries."""
     message: str
+    user_id: Optional[str] = Field(None, description="User ID for personal data queries")
+
+
+class ChatResponse(BaseModel):
+    """Structured response with Firebase metadata."""
+    used_firebase: bool = Field(False, description="Whether Firebase was queried")
+    firebase_read_paths: Dict[str, Any] = Field(default_factory=dict, description="Paths read from Firebase")
+    rag_answer: str = Field(..., description="The natural language answer")
+    intent: str = Field("unknown", description="Detected query intent")
+    confidence: float = Field(0.0, description="Intent classification confidence")
 
 # ─────────────────────────────────────────────
 # ROUTES
@@ -137,22 +198,270 @@ async def index(request: Request):
     """Render the chat interface."""
     return templates.TemplateResponse("index.html", {"request": request})
 
-@app.post("/chat")
-async def chat(request: ChatRequest):
-    """Process chat message and return response."""
+@app.post("/chat", response_model=ChatResponse)
+async def chat(
+    request: ChatRequest,
+    current_user: Optional[AuthenticatedUser] = Depends(optional_auth)
+):
+    """
+    Process chat message with RAG + Firebase integration.
+    
+    AUTHENTICATION:
+    - Optional for policy-only questions
+    - REQUIRED for personal data queries
+    - Only returns data for the authenticated user
+    
+    Pipeline:
+    1. Classify query intent
+    2. If personal data needed → Verify authentication → Query Firebase (READ-ONLY)
+    3. Retrieve context from Qdrant
+    4. Combine contexts and generate response
+    5. Return structured JSON with metadata
+    """
     try:
-        # Run the QA chain
-        result = qa_chain.invoke({"query": request.message})
+        # Initialize response variables
+        user_data_context = "No user data requested or available."
+        firebase_read_paths: Dict[str, Any] = {}
+        used_firebase = False
+        intent_type = "unknown"
+        confidence = 0.0
         
-        response = result.get("result", "I do not have that information in the policy document.")
+        # Log authentication status
+        if current_user:
+            logger.info(f"[Auth] Authenticated user: {current_user.uid} ({current_user.email})")
+        else:
+            logger.info("[Auth] Unauthenticated request")
         
-        return {"response": response}
+        # ─────────────────────────────────────────
+        # STEP 1: Classify query intent
+        # ─────────────────────────────────────────
+        if firebase_enabled and firebase_schema:
+            should_query, classification = should_query_firebase(
+                request.message,
+                confidence_threshold=0.3,
+                schema=firebase_schema
+            )
+            
+            intent_type = classification.intent.value
+            confidence = classification.confidence
+            
+            logger.info(f"[Intent] {intent_type} (confidence: {confidence:.2f})")
+            logger.info(f"[Intent] Requires Firebase: {classification.requires_firebase}")
+            
+            # ─────────────────────────────────────────
+            # STEP 2: Query Firebase if needed (READ-ONLY)
+            # ─────────────────────────────────────────
+            if should_query and classification.requires_firebase:
+                logger.info(f"[Firebase] Personal data query detected")
+                logger.info(f"[Firebase] Suggested collections: {classification.suggested_collections}")
+                
+                # SECURITY: Require authentication for personal data
+                if not current_user:
+                    logger.warning("[Firebase] Personal data requested but user not authenticated")
+                    user_data_context = (
+                        "⚠️ Authentication Required\n\n"
+                        "You asked for personal data, but you're not logged in. "
+                        "Please log in to access your bookings, profile, and other personal information."
+                    )
+                else:
+                    # SECURITY: Use authenticated user's UID only
+                    user_id = current_user.uid
+                    logger.info(f"[Firebase] Querying data for authenticated user: {user_id}")
+                    
+                    # Query Firebase (READ-ONLY operations only)
+                    try:
+                        # Query user-specific data ONLY
+                        firebase_result = read_user_data(
+                            user_id=user_id,
+                            collections=classification.suggested_collections
+                        )
+                        
+                        if firebase_result.success and firebase_result.data:
+                            used_firebase = True
+                            user_data_context = format_firebase_data_for_llm(firebase_result)
+                            
+                            # Track read paths for response
+                            firebase_read_paths = read_service.get_read_paths()
+                            
+                            logger.info(f"[Firebase] Retrieved {firebase_result.document_count} documents")
+                        else:
+                            user_data_context = "No matching data found in database for your account."
+                            logger.info("[Firebase] No data found for user")
+                            
+                    except PermissionError as e:
+                        # SECURITY: Write operation was attempted and blocked
+                        logger.error(f"[SECURITY] Blocked operation: {e}")
+                        user_data_context = "Security: Read-only access enforced."
+                    except Exception as e:
+                        logger.error(f"[Firebase] Error: {e}")
+                        user_data_context = f"Database query error: {str(e)}"
+        
+        # ─────────────────────────────────────────
+        # STEP 3: Retrieve context from Qdrant with similarity scores
+        # ─────────────────────────────────────────
+        # Use similarity_search_with_score to get relevance scores
+        docs_with_scores = vector_store.similarity_search_with_score(request.message, k=4)
+        
+        logger.info(f"[Qdrant] Retrieved {len(docs_with_scores)} policy chunks")
+        
+        # ─────────────────────────────────────────
+        # STEP 3.5: Check relevance score to save LLM costs
+        # ─────────────────────────────────────────
+        RELEVANCE_THRESHOLD = 0.5  # Minimum similarity score (0-1)
+        
+        if docs_with_scores:
+            # Extract scores (lower score = more similar in cosine distance)
+            max_score = max(score for _, score in docs_with_scores)
+            logger.info(f"[Relevance] Max score: {max_score:.3f} (threshold: {RELEVANCE_THRESHOLD})")
+            
+            # If all documents are below threshold, skip LLM call
+            # Note: In cosine similarity, higher score = more similar
+            if max_score < RELEVANCE_THRESHOLD and not used_firebase:
+                logger.info("[Cost Optimization] Low relevance - skipping LLM call")
+                return ChatResponse(
+                    used_firebase=False,
+                    firebase_read_paths={},
+                    rag_answer="I don't have that information in my current data. Could you rephrase your question or ask about NTIS policies, refunds, payments, or invoicing?",
+                    intent=intent_type,
+                    confidence=confidence
+                )
+        
+        # Extract just the documents for context
+        docs = [doc for doc, score in docs_with_scores]
+        policy_context = "\n\n".join([doc.page_content for doc in docs])
+        
+        # ─────────────────────────────────────────
+        # STEP 4: Generate response with LLM
+        # ─────────────────────────────────────────
+        full_prompt = prompt_template.format(
+            context=policy_context,
+            user_data=user_data_context,
+            question=request.message
+        )
+        
+        llm_response = llm.invoke(full_prompt)
+        
+        # Extract text from response
+        if hasattr(llm_response, 'content'):
+            answer = llm_response.content
+        else:
+            answer = str(llm_response)
+        
+        # ─────────────────────────────────────────
+        # STEP 5: Return structured response
+        # ─────────────────────────────────────────
+        return ChatResponse(
+            used_firebase=used_firebase,
+            firebase_read_paths=firebase_read_paths,
+            rag_answer=answer,
+            intent=intent_type,
+            confidence=confidence
+        )
     
     except Exception as e:
-        print(f"Error: {e}")
-        return {"response": f"Error processing request: {str(e)}"}
+        logger.error(f"[Error] {e}")
+        import traceback
+        traceback.print_exc()
+        
+        return ChatResponse(
+            used_firebase=False,
+            firebase_read_paths={},
+            rag_answer=f"Error processing request: {str(e)}",
+            intent="error",
+            confidence=0.0
+        )
 
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "service": "NTIS Policy Assistant"}
+    return {
+        "status": "ok",
+        "service": "NTIS Policy Assistant",
+        "firebase_enabled": firebase_enabled,
+        "firebase_collections": len(firebase_schema.get("collections", {})) if firebase_schema else 0
+    }
+
+
+@app.get("/schema")
+async def get_schema():
+    """
+    Get the discovered Firebase schema.
+    
+    READ-ONLY: This endpoint only returns cached schema information.
+    """
+    if not firebase_enabled or not firebase_schema:
+        return {
+            "enabled": False,
+            "message": "Firebase integration not enabled"
+        }
+    
+    return {
+        "enabled": True,
+        "discovered_at": firebase_schema.get("discovered_at"),
+        "total_collections": firebase_schema.get("total_collections", 0),
+        "total_documents_sampled": firebase_schema.get("total_documents_sampled", 0),
+        "total_fields_discovered": firebase_schema.get("total_fields_discovered", 0),
+        "collections": list(firebase_schema.get("collections", {}).keys())
+    }
+
+
+@app.post("/classify")
+async def classify_intent(request: ChatRequest):
+    """
+    Classify a query's intent without executing it.
+    
+    Useful for debugging and understanding how queries are classified.
+    """
+    if not firebase_enabled:
+        return {
+            "firebase_enabled": False,
+            "message": "Firebase integration not enabled"
+        }
+    
+    classification = classify_query(request.message, firebase_schema)
+    
+    return {
+        "query": request.message,
+        "intent": classification.intent.value,
+        "confidence": classification.confidence,
+        "requires_firebase": classification.requires_firebase,
+        "user_id_required": classification.user_id_required,
+        "suggested_collections": classification.suggested_collections,
+        "suggested_fields": classification.suggested_fields,
+        "matched_patterns": classification.matched_patterns,
+        "explanation": classification.explanation
+    }
+
+
+# Legacy endpoint for backward compatibility
+@app.post("/chat/simple")
+async def chat_simple(request: ChatRequest):
+    """
+    Simple chat endpoint without Firebase integration.
+    
+    Returns only the RAG answer without structured metadata.
+    """
+    try:
+        # Retrieve context from Qdrant only
+        docs = retriever.invoke(request.message)
+        policy_context = "\n\n".join([doc.page_content for doc in docs])
+        
+        # Generate response
+        full_prompt = prompt_template.format(
+            context=policy_context,
+            user_data="No user data requested.",
+            question=request.message
+        )
+        
+        llm_response = llm.invoke(full_prompt)
+        
+        if hasattr(llm_response, 'content'):
+            answer = llm_response.content
+        else:
+            answer = str(llm_response)
+        
+        return {"response": answer}
+    
+    except Exception as e:
+        logger.error(f"[Error] {e}")
+        return {"response": f"Error: {str(e)}"}

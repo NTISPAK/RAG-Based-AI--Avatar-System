@@ -3,6 +3,12 @@
 .env.local
 .env.*.local
 
+# Firebase credentials (NEVER commit - SECURITY CRITICAL)
+*firebase*.json
+*-adminsdk-*.json
+firebase-service-account.json
+firebase_schema.json
+
 # Python
 __pycache__/
 *.py[cod]
