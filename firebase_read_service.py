@@ -478,38 +478,101 @@ def read_user_data(user_id: str, collections: Optional[List[str]] = None) -> Fir
 
 
 def format_firebase_data_for_llm(result: FirebaseReadResult) -> str:
-    """Format Firebase read result for LLM context."""
+    """Format Firebase read result for LLM context in a clean, readable format."""
     if not result.success:
-        return f"Firebase read error: {result.error}"
+        return f"Database Error: {result.error}"
     
     if not result.data:
-        return "No data found."
+        return "No user data found in database."
     
-    lines = ["USER DATA FROM DATABASE:"]
+    lines = ["=== USER'S PERSONAL DATA ===\n"]
+    
+    # Field name beautification mapping
+    field_labels = {
+        "user_id": "User ID",
+        "email": "Email",
+        "displayName": "Name",
+        "phoneNumber": "Phone",
+        "createdAt": "Account Created",
+        "booking_id": "Booking ID",
+        "dateOfAppointment": "Appointment Date",
+        "timeRequired": "Time Required",
+        "duration": "Duration",
+        "type": "Service Type",
+        "venue": "Venue",
+        "languagePair": "Languages",
+        "client": "Client",
+        "customer": "Customer",
+        "isCompleted": "Status (Completed)",
+        "isBooked": "Status (Booked)",
+        "isCancelled": "Status (Cancelled)",
+        "isPending": "Status (Pending)",
+        "interpreterPerHour": "Interpreter Rate/Hour",
+        "minimumHour": "Minimum Hours",
+        "systemRef": "Reference Number",
+        "title": "Title",
+        "relevantInfo": "Additional Info",
+        "bookedBy": "Booked By",
+        "authorised": "Authorized By"
+    }
     
     if isinstance(result.data, dict):
         if "documents" in result.data:
             # Collection result
             docs = result.data["documents"]
-            lines.append(f"Found {len(docs)} records:")
+            lines.append(f"Total Records: {len(docs)}\n")
             for i, doc in enumerate(docs, 1):
-                lines.append(f"\nRecord {i}:")
-                for key, value in doc.items():
-                    if key != "_id":
-                        lines.append(f"  • {key}: {value}")
+                lines.append(f"--- Record {i} ---")
+                for key, value in sorted(doc.items()):
+                    if key != "_id" and value not in [None, "", [], {}]:
+                        label = field_labels.get(key, key.replace("_", " ").title())
+                        # Format value nicely
+                        if isinstance(value, list):
+                            value = ", ".join(str(v) for v in value)
+                        elif isinstance(value, dict):
+                            value = str(value)
+                        elif isinstance(value, bool):
+                            value = "Yes" if value else "No"
+                        lines.append(f"  {label}: {value}")
+                lines.append("")  # Empty line between records
         else:
             # User data across collections
             for collection, docs in result.data.items():
-                lines.append(f"\n{collection.upper()}:")
+                collection_name = collection.replace("_", " ").title()
+                lines.append(f"\n📁 {collection_name}")
+                lines.append("─" * 40)
+                
                 if isinstance(docs, list):
-                    for doc in docs:
-                        for key, value in doc.items():
-                            if key != "_id":
-                                lines.append(f"  • {key}: {value}")
+                    lines.append(f"Total: {len(docs)} record(s)\n")
+                    for idx, doc in enumerate(docs, 1):
+                        if len(docs) > 1:
+                            lines.append(f"  Record {idx}:")
+                        for key, value in sorted(doc.items()):
+                            if key != "_id" and value not in [None, "", [], {}]:
+                                label = field_labels.get(key, key.replace("_", " ").title())
+                                if isinstance(value, list):
+                                    value = ", ".join(str(v) for v in value)
+                                elif isinstance(value, dict):
+                                    value = str(value)
+                                elif isinstance(value, bool):
+                                    value = "Yes" if value else "No"
+                                lines.append(f"    • {label}: {value}")
+                        if idx < len(docs):
+                            lines.append("")
                 else:
-                    for key, value in docs.items():
-                        lines.append(f"  • {key}: {value}")
+                    for key, value in sorted(docs.items()):
+                        if key != "_id" and value not in [None, "", [], {}]:
+                            label = field_labels.get(key, key.replace("_", " ").title())
+                            if isinstance(value, list):
+                                value = ", ".join(str(v) for v in value)
+                            elif isinstance(value, dict):
+                                value = str(value)
+                            elif isinstance(value, bool):
+                                value = "Yes" if value else "No"
+                            lines.append(f"  • {label}: {value}")
+                lines.append("")
     
+    lines.append("=== END OF USER DATA ===")
     return "\n".join(lines)
 
 

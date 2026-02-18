@@ -77,10 +77,20 @@ DATA SOURCES:
 CRITICAL RULES:
 1. Answer ONLY using the context and user data provided below
 2. NEVER make up or assume information not in the context
-3. If information is missing, say: "I don't have that information in my current data."
-4. Be concise but complete - give all relevant details
-5. Use natural language - don't just copy-paste from documents
-6. For user data, present it clearly and only show what's relevant to the question
+3. If the EXACT answer isn't in the context, look for RELATED information that helps answer the question
+4. If truly no relevant information exists, say: "I don't have specific information about that in my current data."
+5. Be concise but complete - give all relevant details from the context
+6. Use natural language - synthesize information, don't just copy-paste
+7. For user data, present it clearly and only show what's relevant to the question
+8. If the question is phrased differently but relates to policy content, find and use that content
+
+FORMATTING GUIDELINES:
+- When showing user's bookings/data, use clean bullet points or numbered lists
+- Format dates clearly (e.g., "January 15, 2024" not raw timestamps)
+- For status fields, use plain language (e.g., "Completed" not "isCompleted: true")
+- Group related information together
+- Use line breaks to separate different items
+- Make it easy to scan and read
 
 CONTEXT FROM POLICY DOCUMENTS:
 {context}
@@ -90,7 +100,7 @@ USER'S PERSONAL DATA:
 
 USER QUESTION: {question}
 
-YOUR ANSWER (natural, conversational, based only on the information above):"""
+YOUR ANSWER (natural, well-formatted, conversational, based only on the information above):"""
 
 # ─────────────────────────────────────────────
 # INITIALIZE COMPONENTS
@@ -116,8 +126,8 @@ vector_store = QdrantVectorStore(
     embedding=embeddings,
 )
 
-# Create retriever (k=4 chunks)
-retriever = vector_store.as_retriever(search_kwargs={"k": 4})
+# Create retriever (k=5 chunks for better coverage)
+retriever = vector_store.as_retriever(search_kwargs={"k": 5})
 
 # Initialize Gemini LLM
 print("Initializing Gemini model...")
@@ -238,7 +248,7 @@ async def chat(
         if firebase_enabled and firebase_schema:
             should_query, classification = should_query_firebase(
                 request.message,
-                confidence_threshold=0.3,
+                confidence_threshold=0.4,
                 schema=firebase_schema
             )
             
@@ -300,24 +310,37 @@ async def chat(
         # STEP 3: Retrieve context from Qdrant with similarity scores
         # ─────────────────────────────────────────
         # Use similarity_search_with_score to get relevance scores
-        docs_with_scores = vector_store.similarity_search_with_score(request.message, k=4)
+        docs_with_scores = vector_store.similarity_search_with_score(request.message, k=5)
         
         logger.info(f"[Qdrant] Retrieved {len(docs_with_scores)} policy chunks")
         
         # ─────────────────────────────────────────
-        # STEP 3.5: Check relevance score to save LLM costs
+        # STEP 3.5: Smart relevance checking to save LLM costs
         # ─────────────────────────────────────────
-        RELEVANCE_THRESHOLD = 0.5  # Minimum similarity score (0-1)
+        RELEVANCE_THRESHOLD = 0.2  # Minimum similarity score (0-1) - very permissive to avoid false negatives
         
         if docs_with_scores:
-            # Extract scores (lower score = more similar in cosine distance)
+            # Extract scores (higher score = more similar)
             max_score = max(score for _, score in docs_with_scores)
-            logger.info(f"[Relevance] Max score: {max_score:.3f} (threshold: {RELEVANCE_THRESHOLD})")
+            avg_score = sum(score for _, score in docs_with_scores) / len(docs_with_scores)
             
-            # If all documents are below threshold, skip LLM call
-            # Note: In cosine similarity, higher score = more similar
-            if max_score < RELEVANCE_THRESHOLD and not used_firebase:
-                logger.info("[Cost Optimization] Low relevance - skipping LLM call")
+            logger.info(f"[Relevance] Max: {max_score:.3f}, Avg: {avg_score:.3f} (threshold: {RELEVANCE_THRESHOLD})")
+            
+            # Conservative filtering: Only skip LLM for clearly irrelevant queries
+            # Skip only if ALL these conditions are met:
+            # 1. Max score is VERY low (< 0.2)
+            # 2. Average score is also low (< 0.15)
+            # 3. No Firebase data was retrieved
+            # 4. Intent is unknown or clearly off-topic
+            should_skip = (
+                max_score < RELEVANCE_THRESHOLD and 
+                avg_score < 0.15 and
+                not used_firebase and 
+                intent_type not in ["general_info", "policy_question", "personal_data", "payment_info", "booking_info"]
+            )
+            
+            if should_skip:
+                logger.info("[Cost Optimization] Very low relevance - skipping LLM call")
                 return ChatResponse(
                     used_firebase=False,
                     firebase_read_paths={},
@@ -325,6 +348,10 @@ async def chat(
                     intent=intent_type,
                     confidence=confidence
                 )
+            
+            # Log if we're in borderline territory
+            if max_score < 0.35:
+                logger.warning(f"[Relevance] Borderline relevance detected (score: {max_score:.3f}) - proceeding with LLM call to avoid false negative")
         
         # Extract just the documents for context
         docs = [doc for doc, score in docs_with_scores]
