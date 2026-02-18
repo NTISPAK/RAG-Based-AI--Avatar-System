@@ -43,6 +43,11 @@ from query_intent_classifier import (
     IntentClassification,
     QueryIntent
 )
+# AI-based intent classifier (with rule-based fallback)
+from ai_intent_classifier import (
+    get_ai_classifier,
+    should_query_firebase_ai
+)
 from firebase_auth import (
     verify_firebase_token,
     require_auth,
@@ -156,7 +161,10 @@ try:
     # Discover schema at startup (runs once, then cached)
     firebase_schema = discover_firestore_schema()
     
-    # Initialize the classifier with schema
+    # Initialize AI-based classifier with schema (includes rule-based fallback)
+    ai_classifier = get_ai_classifier(firebase_schema)
+    
+    # Also keep rule-based classifier as backup
     classifier = get_classifier(firebase_schema)
     
     # Initialize read service
@@ -166,6 +174,7 @@ try:
     collection_count = len(firebase_schema.get("collections", {}))
     print(f"✓ Firebase schema discovered: {collection_count} collections")
     print(f"✓ Schema cached to: firebase_schema.json")
+    print("✓ AI Intent Classifier initialized (with rule-based fallback)")
     print("✓ Firebase READ-ONLY mode active")
     
 except FileNotFoundError as e:
@@ -243,10 +252,11 @@ async def chat(
             logger.info("[Auth] Unauthenticated request")
         
         # ─────────────────────────────────────────
-        # STEP 1: Classify query intent
+        # STEP 1: Classify query intent using AI (with fallback)
         # ─────────────────────────────────────────
         if firebase_enabled and firebase_schema:
-            should_query, classification = should_query_firebase(
+            # Use AI-based classifier (automatically falls back to rule-based if needed)
+            should_query, classification = should_query_firebase_ai(
                 request.message,
                 confidence_threshold=0.4,
                 schema=firebase_schema
@@ -255,8 +265,8 @@ async def chat(
             intent_type = classification.intent.value
             confidence = classification.confidence
             
-            logger.info(f"[Intent] {intent_type} (confidence: {confidence:.2f})")
-            logger.info(f"[Intent] Requires Firebase: {classification.requires_firebase}")
+            logger.info(f"[AI Intent] {intent_type} (confidence: {confidence:.2f})")
+            logger.info(f"[AI Intent] Requires Firebase: {classification.requires_firebase}")
             
             # ─────────────────────────────────────────
             # STEP 2: Query Firebase if needed (READ-ONLY)
