@@ -80,86 +80,234 @@ class AIIntentClassifier:
     def _create_prototypes(self) -> List[IntentPrototype]:
         """Create prototype phrases for each intent."""
         return [
-            # Personal Data Intent
+            # Personal Data Intent - Account / Profile / Orders / Bookings
             IntentPrototype(
                 intent=QueryIntent.PERSONAL_DATA,
                 phrases=[
+                    # Direct Booking Access
                     "show me my bookings",
-                    "what are my appointments",
-                    "my profile information",
-                    "my account details",
-                    "list my orders",
-                    "show my booking history",
+                    "show my bookings",
+                    "list my bookings",
+                    "display my bookings",
+                    "get my bookings",
+                    "retrieve my bookings",
+                    "view my bookings",
+                    "check my bookings",
+                    "fetch my bookings",
+                    "what are my bookings",
                     "what bookings do I have",
-                    "my personal data",
-                    "my user information",
-                    "show me my profile",
-                    "what's in my account",
-                    "my scheduled appointments",
+                    "do I have any bookings",
+                    "let me see my bookings",
+                    "can you show my bookings",
+                    "please show my bookings",
+                    "I want to see my bookings",
+                    "I need to see my bookings",
+                    
+                    # Booking History
+                    "my booking history",
+                    "show my booking history",
+                    "view my booking history",
+                    "my past bookings",
+                    "my previous bookings",
+                    "my recent bookings",
+                    
+                    # Booking Details
+                    "my booking details",
+                    "show my booking details",
+                    "details of my booking",
                     "bookings under my name",
-                    "my reservation details"
+                    "bookings linked to me",
+                    "bookings in my account",
+                    
+                    # Appointments
+                    "what are my appointments",
+                    "show my appointments",
+                    "list my appointments",
+                    "view my appointments",
+                    "my appointments",
+                    "do I have any appointments",
+                    "my scheduled appointments",
+                    "my upcoming appointments",
+                    "my confirmed appointments",
+                    "when is my next appointment",
+                    "what is my next appointment",
+                    
+                    # Orders
+                    "list my orders",
+                    "show my orders",
+                    "view my orders",
+                    "what orders do I have",
+                    "my order history",
+                    
+                    # Profile
+                    "my profile information",
+                    "show me my profile",
+                    "show my profile",
+                    "view my profile",
+                    "check my profile",
+                    "my profile details",
+                    
+                    # Account
+                    "my account details",
+                    "show my account details",
+                    "view my account details",
+                    "what's in my account",
+                    "my account information",
+                    
+                    # Personal Data
+                    "my personal data",
+                    "my personal information",
+                    "my user information",
+                    "my user details",
+                    "what data do you have about me"
                 ],
                 requires_firebase=True,
                 suggested_collections=["users", "Booking", "bookings"]
             ),
             
-            # General Info / Policy Questions
+            # General Info / Policy Questions - Refund / Cancellation / Invoicing
             IntentPrototype(
                 intent=QueryIntent.GENERAL_INFO,
                 phrases=[
+                    # Refund Policy
                     "what is the refund policy",
+                    "explain the refund policy",
+                    "tell me the refund policy",
+                    "how does the refund policy work",
+                    "refund policy details",
+                    "refund rules",
+                    "refund terms",
+                    "refund conditions",
                     "how do refunds work",
-                    "when do interpreters get paid",
-                    "payment terms for interpreters",
-                    "invoicing process",
-                    "how to submit an invoice",
+                    "how are refunds processed",
+                    "how are refunds approved",
                     "who approves refunds",
-                    "what is the cancellation policy",
-                    "company policies",
-                    "payment schedule",
-                    "how long until payment",
                     "refund approval process",
+                    "can I get a refund",
+                    "am I eligible for a refund",
+                    "how long do refunds take",
+                    
+                    # Cancellation Policy
+                    "what is the cancellation policy",
+                    "cancellation policy details",
+                    "cancellation rules",
+                    "what happens if I cancel",
+                    "what happens if a booking is cancelled",
+                    "cancellation conditions",
+                    "booking cancellation rules",
+                    
+                    # Invoicing
+                    "invoicing process",
+                    "how does invoicing work",
+                    "how to submit an invoice",
+                    "how do I submit an invoice",
+                    "invoice submission process",
                     "invoice submission deadline",
+                    "when is the invoice due",
+                    "where do I submit my invoice",
+                    "how are invoices processed",
+                    "invoice approval process",
+                    "invoice requirements",
+                    "steps to submit an invoice",
+                    
+                    # Company Policies
+                    "company policies",
+                    "company rules",
+                    "business policies",
+                    "terms and conditions",
+                    "service policies",
+                    "general policies",
+                    
+                    # Payment Policy
+                    "payment policy",
                     "payment conditions",
-                    "what happens if I cancel"
+                    "payment terms for interpreters",
+                    "interpreter payment terms",
+                    "how does payment work",
+                    "payment schedule",
+                    "payment rules",
+                    "how are interpreters paid"
                 ],
                 requires_firebase=False,
                 suggested_collections=[]
             ),
             
-            # Payment Info
+            # Payment Info - Timing / Delay / Partial Work
             IntentPrototype(
                 intent=QueryIntent.GENERAL_INFO,
                 phrases=[
+                    # Payment Timing
                     "when will I get paid",
+                    "when do I get paid",
+                    "when will payment be made",
+                    "how long does payment take",
+                    "how long until I get paid",
                     "payment processing time",
-                    "how long for payment",
+                    "payment timeline",
+                    "expected payment date",
+                    "when are invoices paid",
+                    "how soon will I receive payment",
+                    "how soon will I be paid",
+                    "payment turnaround time",
+                    "invoice payment time",
+                    "interpreter payment schedule",
+                    
+                    # Payment Delays
                     "payment delay reasons",
                     "why is payment late",
-                    "payment schedule for interpreters",
-                    "when are invoices paid",
-                    "payment timeline",
-                    "how soon will I receive payment",
+                    "why is my payment delayed",
+                    "reason for delayed payment",
+                    "what causes payment delays",
+                    "why hasn't payment arrived",
+                    "delay in payment processing",
+                    "late payment explanation",
+                    
+                    # Partial Work
                     "what if I leave a job halfway",
                     "incomplete assignment payment",
-                    "partial work payment"
+                    "partial work payment",
+                    "do I get paid for partial work",
+                    "payment for incomplete job",
+                    "will I get paid if I leave early",
+                    "payment for half completed job",
+                    "how is partial work paid",
+                    "do interpreters get paid for partial work",
+                    "what happens if I do not finish a job",
+                    "payment for unfinished assignment"
                 ],
                 requires_firebase=False,
                 suggested_collections=[]
             ),
             
-            # Booking Info (could be personal or general)
+            # Booking Status Focused
             IntentPrototype(
                 intent=QueryIntent.PERSONAL_DATA,
                 phrases=[
                     "my upcoming bookings",
+                    "show my upcoming bookings",
+                    "list my upcoming bookings",
+                    "what bookings are coming up for me",
+                    "my next booking",
+                    "what is my next booking",
                     "when is my next appointment",
+                    "tell me my next booking",
                     "booking status",
+                    "check booking status",
+                    "what is the status of my booking",
+                    "status of my upcoming booking",
                     "my confirmed bookings",
-                    "cancelled bookings",
-                    "pending bookings",
+                    "show my confirmed bookings",
+                    "my pending bookings",
+                    "show my pending bookings",
+                    "my cancelled bookings",
+                    "show my cancelled bookings",
                     "booking details",
-                    "my scheduled jobs"
+                    "show my booking details",
+                    "details of my booking",
+                    "my scheduled jobs",
+                    "jobs I have scheduled",
+                    "jobs assigned to me",
+                    "appointments assigned to me"
                 ],
                 requires_firebase=True,
                 suggested_collections=["Booking", "bookings"]
@@ -170,13 +318,30 @@ class AIIntentClassifier:
                 intent=QueryIntent.UNKNOWN,
                 phrases=[
                     "hello",
+                    "hi",
                     "hi there",
+                    "hey",
+                    "hello there",
                     "good morning",
+                    "good afternoon",
+                    "good evening",
+                    "greetings",
                     "how are you",
+                    "how's it going",
+                    "what's up",
+                    "how have you been",
+                    "nice to meet you",
                     "thanks",
                     "thank you",
+                    "thanks a lot",
+                    "many thanks",
+                    "appreciate it",
                     "goodbye",
-                    "bye"
+                    "bye",
+                    "see you",
+                    "see you later",
+                    "talk later",
+                    "take care"
                 ],
                 requires_firebase=False,
                 suggested_collections=[]
