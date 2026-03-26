@@ -1,6 +1,6 @@
-# NTIS Policy RAG Chatbot
+# NTIS Policy RAG with LiveTalking Digital Human
 
-A Retrieval-Augmented Generation (RAG) chatbot that answers questions about NTIS company policies using semantic search and AI.
+A Retrieval-Augmented Generation (RAG) system integrated with LiveTalking digital human frontend for answering NTIS policy questions with real-time lip-synced video responses.
 
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115.0-green.svg)
@@ -8,89 +8,76 @@ A Retrieval-Augmented Generation (RAG) chatbot that answers questions about NTIS
 
 ## 🌟 Features
 
-- ✅ **Semantic Search** - Vector-based document retrieval using Qdrant
-- ✅ **AI-Powered Responses** - Google Gemini LLM for natural language answers
-- ✅ **Professional UI** - Modern, responsive chat interface
-- ✅ **No Authentication** - Simple, ready-to-use chatbot
-- ✅ **Anti-Hallucination** - Strict fact-based responses only
-- ✅ **Easy Deployment** - Docker-ready with minimal setup
+- ✅ **Real-time Digital Human** – LiveTalking with Wav2lip model for realistic lip-sync animation
+- ✅ **WebRTC Video Streaming** – Low-latency video delivery to browser
+- ✅ **Semantic RAG** – Qdrant + LangChain for policy document retrieval
+- ✅ **Gemini LLM** – Google Gemini 2.5 Flash for answer generation
+- ✅ **Anti-hallucination guardrails** – System prompt enforces "not in document" fallback
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.10+
 - Docker (for Qdrant)
 - Google Gemini API key ([Get one here](https://aistudio.google.com/app/apikey))
+- LiveTalking models downloaded (wav2lip.pth, avatar files)
 
-### Installation
+### Quick Start
 
-1. **Clone the repository**
+See **[QUICKSTART.md](QUICKSTART.md)** for detailed setup instructions.
+
+**Automated Start:**
+```bash
+./start_project.sh
+```
+
+**Manual Start:**
+
+1. **Start Qdrant**
    ```bash
-   git clone <your-repo-url>
-   cd Tester
+   docker run -p 6333:6333 qdrant/qdrant:latest
    ```
 
-2. **Create virtual environment**
+2. **Start RAG Backend** (Terminal 1)
    ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   cd /Users/naumanrashid/Desktop/Tester
+   source .venv/bin/activate
+   python -m uvicorn main:app --reload
    ```
 
-3. **Install dependencies**
+3. **Start LiveTalking Frontend** (Terminal 2)
    ```bash
-   pip install -r requirements.txt
+   cd /Users/naumanrashid/Desktop/Tester/LiveTalking
+   source livetalking_env/bin/activate
+   python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1
    ```
 
-4. **Configure environment variables**
-   ```bash
-   cp .env.example .env
-   ```
-   
-   Edit `.env` and add your API key:
-   ```env
-   GOOGLE_API_KEY=your_gemini_api_key_here
-   QDRANT_URL=http://localhost:6333
-   COLLECTION_NAME=policy_docs
-   ```
-
-5. **Start Qdrant vector database**
-   ```bash
-   docker run -p 6333:6333 qdrant/qdrant
-   ```
-
-6. **Ingest your PDF documents**
-   ```bash
-   python ingest.py
-   ```
-
-7. **Run the application**
-   ```bash
-   uvicorn main:app --reload --port 8080
-   ```
-
-8. **Open in browser**
-   ```
-   http://localhost:8080
-   ```
+4. **Access the Application**
+   - Simple UI: http://localhost:8010/webrtcapi.html
+   - Dashboard: http://localhost:8010/dashboard.html
 
 ## 📁 Project Structure
 
 ```
 Tester/
-├── main.py                  # FastAPI backend
-├── ingest.py                # PDF ingestion script
-├── requirements.txt         # Python dependencies
-├── .env.example             # Environment template
-├── .gitignore              # Git ignore rules
-├── templates/
-│   └── index.html          # Chat UI
-├── static/
-│   └── style.css           # Styles
-├── Accounts, Invoicing & Refund Policy.pdf  # Source document
-├── DOCUMENTATION.md        # Full documentation
-├── QUICK_START.md          # Quick reference
-└── CODE_REFERENCE.md       # Code explanations
+├── main.py                    # RAG Backend (FastAPI)
+├── ingest.py                  # PDF ingestion script
+├── requirements.txt           # Backend dependencies
+├── .env                       # Environment variables
+├── start_project.sh           # Automated startup script
+├── LiveTalking/              # Frontend (Digital Human)
+│   ├── app.py                # LiveTalking server
+│   ├── llm.py                # Modified to call RAG backend
+│   ├── web/                  # Frontend HTML files
+│   ├── models/               # AI models (wav2lip.pth)
+│   └── data/avatars/         # Avatar files
+├── static/                    # Static files
+├── templates/                 # HTML templates
+├── data/                      # Policy documents
+├── QUICKSTART.md             # Quick start guide
+├── README_LIVETALKING.md     # LiveTalking integration docs
+└── frontend_backup_*/        # Old frontend (backed up)
 ```
 
 ## 🛠️ Technology Stack
@@ -102,19 +89,23 @@ Tester/
 | **Embeddings** | HuggingFace (all-MiniLM-L6-v2) |
 | **LLM** | Google Gemini 2.5 Flash |
 | **Framework** | LangChain |
-| **Frontend** | HTML/CSS/JavaScript |
+| **Frontend** | LiveTalking (WebRTC + Wav2lip) |
+| **Digital Human** | Wav2lip lip-sync model |
+| **Video Streaming** | WebRTC (aiortc) |
 
 ## 📖 How It Works
 
 ```
-User Query → Embeddings → Vector Search → LLM → Response
+User Browser → LiveTalking (WebRTC) → RAG Backend → Qdrant + Gemini → Response → TTS + Lip-sync → Video Stream
 ```
 
-1. **User asks a question** via the chat interface
-2. **Convert to vector** using HuggingFace embeddings (384 dimensions)
-3. **Search Qdrant** for top 4 most similar document chunks
-4. **Send to Gemini** with retrieved context
-5. **Return answer** to user with strict fact-checking
+1. **User types question** in LiveTalking web interface
+2. **LiveTalking sends** question to RAG backend via HTTP
+3. **RAG backend** converts query to vector embeddings
+4. **Qdrant search** retrieves top 4 most similar document chunks
+5. **Gemini LLM** generates answer from retrieved context
+6. **LiveTalking** converts answer to speech and generates lip-sync video
+7. **WebRTC streams** synchronized video to user's browser
 
 ## 🔧 Configuration
 
@@ -254,9 +245,11 @@ pip install -r requirements.txt --upgrade
 
 ## 📚 Documentation
 
-- **Full Documentation**: See [DOCUMENTATION.md](DOCUMENTATION.md)
-- **Quick Reference**: See [QUICK_START.md](QUICK_START.md)
-- **Code Reference**: See [CODE_REFERENCE.md](CODE_REFERENCE.md)
+- **Quick Start**: See [QUICKSTART.md](QUICKSTART.md)
+- **LiveTalking Integration**: See [README_LIVETALKING.md](README_LIVETALKING.md)
+- **LiveTalking Setup**: See [LiveTalking/LIVETALKING_SETUP.md](LiveTalking/LIVETALKING_SETUP.md)
+- **Mac M2 Notes**: See [LiveTalking/MAC_M2_SETUP.md](LiveTalking/MAC_M2_SETUP.md)
+- **Model Downloads**: See [LiveTalking/DOWNLOAD_MODELS.md](LiveTalking/DOWNLOAD_MODELS.md)
 
 ## 🤝 Contributing
 
