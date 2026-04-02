@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NTIS Policy Assistant</title>
+    <style>
+    :root {
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --surface2: #334155;
+        --border: #475569;
+        --text: #f1f5f9;
+        --text-muted: #94a3b8;
+        --accent: #3b82f6;
+        --accent-hover: #2563eb;
+        --success: #22c55e;
+        --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    header {
+        width: 100%;
+        padding: 16px 24px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    header h1 { font-size: 1.2rem; font-weight: 600; }
+    .status-dot {
+        width: 10px; height: 10px;
+        border-radius: 50%;
+        background: var(--danger);
+        display: inline-block;
+        margin-right: 6px;
+        transition: background .3s;
+    }
+    .status-dot.live { background: var(--success); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+    .status-label { font-size: .85rem; color: var(--text-muted); }
+
+    .main {
+        width: 100%;
+        max-width: 900px;
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        flex: 1;
+    }
+
+    .video-container {
+        position: relative;
+        background: #000;
+        border-radius: 12px;
+        overflow: hidden;
+        aspect-ratio: 1/1;
+        max-height: 500px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .video-container video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .video-placeholder {
+        color: var(--text-muted);
+        text-align: center;
+        font-size: .95rem;
+    }
+    .video-placeholder svg { margin-bottom: 12px; opacity: .4; }
+    audio { display: none; }
+
+    .controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+    .btn {
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: none;
+        font-size: .9rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all .15s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-outline {
+        background: transparent;
+        color: var(--text-muted);
+        border: 1px solid var(--border);
+    }
+    .btn-outline:hover { background: var(--surface2); color: var(--text); }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    .option-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: .8rem;
+        color: var(--text-muted);
+    }
+    .option-row input[type=checkbox] { accent-color: var(--accent); }
+
+    .chat-area {
+        background: var(--surface);
+        border-radius: 12px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+    .chat-area h3 { font-size: .95rem; color: var(--text-muted); font-weight: 500; }
+
+    #response-box {
+        min-height: 60px;
+        max-height: 160px;
+        overflow-y: auto;
+        background: var(--bg);
+        border-radius: 8px;
+        padding: 12px;
+        font-size: .9rem;
+        line-height: 1.5;
+        color: var(--text);
+        display: none;
+    }
+    #response-box.visible { display: block; }
+
+    .input-row {
+        display: flex;
+        gap: 8px;
+    }
+    .input-row textarea {
+        flex: 1;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 14px;
+        color: var(--text);
+        font-size: .9rem;
+        resize: none;
+        min-height: 44px;
+        max-height: 120px;
+        font-family: inherit;
+    }
+    .input-row textarea:focus { outline: none; border-color: var(--accent); }
+    .input-row textarea::placeholder { color: var(--text-muted); }
+
+    .spinner {
+        display: none;
+        width: 18px; height: 18px;
+        border: 2px solid rgba(255,255,255,.3);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin .6s linear infinite;
+        margin-right: 6px;
+    }
+    .spinner.active { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .btn-mic {
+        width: 44px; height: 44px;
+        border-radius: 50%;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all .2s;
+        flex-shrink: 0;
+    }
+    .btn-mic:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-mic.recording {
+        background: var(--danger);
+        color: #fff;
+        border-color: var(--danger);
+        animation: pulse-mic 1s infinite;
+    }
+    @keyframes pulse-mic { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.4)} 50%{box-shadow:0 0 0 8px rgba(239,68,68,0)} }
+    .stt-status {
+        font-size: .8rem;
+        color: var(--text-muted);
+        min-height: 18px;
+    }
+    .stt-status.active { color: var(--danger); font-weight: 500; }
+
+    footer {
+        padding: 12px;
+        text-align: center;
+        font-size: .75rem;
+        color: var(--text-muted);
+    }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>NTIS Policy Assistant</h1>
+    <div style="display:flex;align-items:center;">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-label" id="status-label">Disconnected</span>
+    </div>
+</header>
+
+<div class="main">
+    <div class="video-container" id="video-wrap">
+        <div class="video-placeholder" id="placeholder">
+            <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9A2.25 2.25 0 0013.5 5.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z"/></svg>
+            <p>Click <strong>Start</strong> to connect</p>
+        </div>
+        <audio id="audio" autoplay="true"></audio>
+        <video id="video" autoplay="true" playsinline="true" style="display:none;"></video>
+    </div>
+
+    <div class="controls">
+        <button class="btn btn-primary" id="start" onclick="start()">Start</button>
+        <button class="btn btn-danger" id="stop" style="display:none" onclick="stop()">Stop</button>
+        <div class="option-row" style="margin-left:auto;">
+            <input id="use-stun" type="checkbox"/>
+            <label for="use-stun">STUN server</label>
+        </div>
+    </div>
+
+    <input type="hidden" id="sessionid" value="0">
+
+    <div class="chat-area">
+        <h3>Ask a policy question</h3>
+        <div id="response-box"></div>
+        <div class="stt-status" id="stt-status"></div>
+        <form id="echo-form" class="input-row">
+            <button type="button" class="btn-mic" id="mic-btn" title="Click to speak">
+                <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </button>
+            <textarea id="message" rows="1" placeholder="Type or click mic to speak..." autofocus></textarea>
+            <button type="submit" class="btn btn-primary" id="send-btn">
+                <span class="spinner" id="send-spinner"></span>Send
+            </button>
+        </form>
+    </div>
+</div>
+
+<footer>NTIS Policy RAG &middot; Powered by LiveTalking + Gemini</footer>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="client.js"></script>
+</body>
+<script type="text/javascript" charset="utf-8">
+$(document).ready(function() {
+
+    // --- Send question to RAG via LiveTalking ---
+    $('#echo-form').on('submit', function(e) {
+        e.preventDefault();
+        var message = $('#message').val().trim();
+        if (!message) return;
+
+        var sessionid = parseInt($('#sessionid').val());
+        console.log('Sending:', message, 'session:', sessionid);
+
+        // Show spinner & disable send
+        $('#send-spinner').addClass('active');
+        $('#send-btn').prop('disabled', true);
+
+        // Show response box with "thinking" state
+        $('#response-box').addClass('visible').html('<em style="color:var(--text-muted)">Thinking...</em>');
+
+        fetch('/human', {
+            body: JSON.stringify({
+                text: message,
+                type: 'chat',
+                interrupt: true,
+                sessionid: sessionid,
+            }),
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST'
+        }).then(function(res) {
+            // Request accepted — avatar will speak the answer
+            $('#response-box').html('<em style="color:var(--text-muted)">Avatar is responding...</em>');
+            // Re-enable after a short delay (response streams via WebRTC audio)
+            setTimeout(function() {
+                $('#send-spinner').removeClass('active');
+                $('#send-btn').prop('disabled', false);
+            }, 2000);
+        }).catch(function(err) {
+            console.error('Error:', err);
+            $('#response-box').html('<span style="color:var(--danger)">Failed to send. Is the connection active?</span>');
+            $('#send-spinner').removeClass('active');
+            $('#send-btn').prop('disabled', false);
+        });
+
+        $('#message').val('').focus();
+    });
+
+    // --- Enter to send (Shift+Enter for newline) ---
+    $('#message').on('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            $('#echo-form').submit();
+        }
+    });
+
+    // --- Auto-resize textarea ---
+    $('#message').on('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+    });
+});
+
+// --- Speech-to-Text (Web Speech API) ---
+var recognition = null;
+var isListening = false;
+
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = function() {
+        isListening = true;
+        $('#mic-btn').addClass('recording');
+        $('#stt-status').addClass('active').text('Listening...');
+    };
+
+    recognition.onresult = function(event) {
+        var transcript = '';
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+            transcript += event.results[i][0].transcript;
+        }
+        $('#message').val(transcript);
+        // If final result, auto-submit
+        if (event.results[event.results.length - 1].isFinal) {
+            $('#stt-status').removeClass('active').text('');
+            $('#mic-btn').removeClass('recording');
+            isListening = false;
+            if (transcript.trim()) {
+                setTimeout(function() { $('#echo-form').submit(); }, 200);
+            }
+        }
+    };
+
+    recognition.onerror = function(event) {
+        console.error('Speech recognition error:', event.error);
+        $('#stt-status').removeClass('active').text('Mic error: ' + event.error);
+        $('#mic-btn').removeClass('recording');
+        isListening = false;
+    };
+
+    recognition.onend = function() {
+        if (isListening) {
+            $('#mic-btn').removeClass('recording');
+            $('#stt-status').removeClass('active').text('');
+            isListening = false;
+        }
+    };
+} else {
+    // Browser doesn't support Speech Recognition
+    $('#mic-btn').prop('disabled', true).attr('title', 'Speech recognition not supported in this browser');
+}
+
+$('#mic-btn').on('click', function() {
+    if (!recognition) return;
+    if (isListening) {
+        recognition.stop();
+        isListening = false;
+        $('#mic-btn').removeClass('recording');
+        $('#stt-status').removeClass('active').text('');
+    } else {
+        recognition.start();
+    }
+});
+
+// --- Override client.js start/stop to update UI ---
+var _origStart = window.start;
+window.start = function() {
+    _origStart();
+    $('#placeholder').hide();
+    $('#video').show();
+    $('#status-dot').addClass('live');
+    $('#status-label').text('Connected');
+};
+
+var _origStop = window.stop;
+window.stop = function() {
+    _origStop();
+    $('#video').hide();
+    $('#placeholder').show();
+    $('#status-dot').removeClass('live');
+    $('#status-label').text('Disconnected');
+    $('#response-box').removeClass('visible');
+};
+</script>
+</html>
