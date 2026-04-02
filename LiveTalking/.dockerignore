@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+
+# Virtual environments
+livetalking_env/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+tmp*
+trial*/
+
+# Documentation
+*.md
+!README.md
+!README-EN.md
+
+# Docker files
+Dockerfile
+Dockerfile.old
+.dockerignore
+
+# Build artifacts
+build/
+dist/
+
+# Data utils (large files)
+data_utils/face_tracking/3DMM/
+data_utils/face_parsing/79999_iter.pth
+
+# Pretrained models (will be mounted as volume)
+pretrained/
+
+# Test videos
+*.mp4
