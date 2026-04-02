@@ -16,10 +16,6 @@ __pycache__/
 venv/
 LiveTalking/livetalking_env/
 
-# LiveTalking models (large files)
-LiveTalking/models/
-LiveTalking/data/avatars/
-
 # IDE
 .vscode/
 .idea/

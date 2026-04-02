@@ -1,0 +1,4 @@
+LiveTalking/models/*.pth filter=lfs diff=lfs merge=lfs -text
+LiveTalking/data/avatars/**/*.pkl filter=lfs diff=lfs merge=lfs -text
+LiveTalking/data/avatars/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+LiveTalking/data/avatars/**/*.png filter=lfs diff=lfs merge=lfs -text
