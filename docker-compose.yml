@@ -33,6 +33,9 @@ services:
       - QDRANT_URL=http://qdrant:6333
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - ENABLE_TRANSLATION=${ENABLE_TRANSLATION:-true}
+      - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-en}
+      - SUPPORTED_LANGUAGES=${SUPPORTED_LANGUAGES:-en,ur}
     volumes:
       - ./documents:/app/documents
     depends_on:
@@ -61,6 +64,7 @@ services:
       - BATCH_SIZE=2
       - AVATAR_ID=wav2lip256_avatar1
       - REF_FILE=en-US-JennyNeural
+      - CHAT_LANGUAGE=${CHAT_LANGUAGE:-en}
     volumes:
       - ./LiveTalking/models:/app/models
       - ./LiveTalking/data:/app/data

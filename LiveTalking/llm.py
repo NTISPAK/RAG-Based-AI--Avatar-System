@@ -8,6 +8,9 @@ from logger import logger
 # RAG Backend URL - modify this if your backend is on a different host/port
 RAG_BACKEND_URL = os.getenv("RAG_BACKEND_URL", "http://127.0.0.1:8000")
 
+# Language setting - set to 'ur' for Urdu, 'en' for English
+CHAT_LANGUAGE = os.getenv("CHAT_LANGUAGE", "en")
+
 def llm_response(message, nerfreal: BaseReal):
     """
     Call the RAG backend API and stream the response to the digital human.
@@ -16,10 +19,13 @@ def llm_response(message, nerfreal: BaseReal):
     start = time.perf_counter()
     
     try:
-        # Call the RAG backend
+        # Call the RAG backend with language parameter
         response = requests.post(
             f"{RAG_BACKEND_URL}/chat",
-            json={"message": message},
+            json={
+                "message": message,
+                "language": CHAT_LANGUAGE
+            },
             timeout=30
         )
         
