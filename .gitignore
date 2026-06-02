@@ -36,3 +36,30 @@ qdrant_storage/
 *.tmp
 *.bak
 *.cache
+
+node_modules/
+build/
+dist/
+.cache/
+
+# AI/ML Models (downloaded separately via scripts)
+LiveTalking/models/
+*.pth
+*.onnx
+*.bin
+*.safetensors
+*.msgpack
+
+# Avatar generated data (regenerated from video)
+LiveTalking/data/avatars/
+
+# Archive / large media
+_archive/
+
+# Documentation outputs (generated)
+WEEKLY_PROGRESS_REPORT.md
+CODE_DOCUMENTATION.md
+
+# Docker volumes
+qdrant_storage/
+postgres_data/
