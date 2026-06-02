@@ -337,7 +337,8 @@ class BaseReal:
                     target_frame = self.custom_img_cycle[audiotype][mirindex]
                     self.custom_index[audiotype] += 1
                 else:
-                    target_frame = self.frame_list_cycle[idx]
+                    # Static idle frame: always use frame 0 (neutral facing camera)
+                    target_frame = self.frame_list_cycle[0]
                 
                 if enable_transition:
                     # 说话→静音过渡

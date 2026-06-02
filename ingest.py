@@ -19,9 +19,10 @@ load_dotenv()
 
 # Configuration — primary document sources
 BASE_DIR = os.path.dirname(__file__)
+DOCUMENTS_DIR = os.path.join(BASE_DIR, "documents")
 DOC_PATHS = [
-    os.path.join(BASE_DIR, "Updated Study Visa Team Document .docx"),
-    os.path.join(BASE_DIR, "NIRA Updated Document .docx"),
+    os.path.join(DOCUMENTS_DIR, "Updated Study Visa Team Document .docx"),
+    os.path.join(DOCUMENTS_DIR, "NIRA Updated Document .docx"),
 ]
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = "policy_docs"
@@ -128,7 +129,7 @@ def main():
         if not os.path.exists(doc_path):
             raise FileNotFoundError(f"Document not found: {doc_path}")
         docs = load_docx(doc_path)
-        print(f"    → {len(docs)} sections loaded")
+        print(f"    -> {len(docs)} sections loaded")
         all_documents.extend(docs)
 
     print(f"\n    Total sections across all documents: {len(all_documents)}")
@@ -174,7 +175,7 @@ def main():
 
     # 6. Verify
     info = client.get_collection(collection_name=COLLECTION_NAME)
-    print(f"\n    Verification — points in collection: {info.points_count}")
+    print(f"\n    Verification - points in collection: {info.points_count}")
 
     print("\n" + "=" * 60)
     print("SUCCESS! Document ingestion complete.")

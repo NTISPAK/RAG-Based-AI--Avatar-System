@@ -4,6 +4,7 @@ FastAPI server that provides the /chat endpoint for the LiveTalking avatar.
 Uses Qdrant for vector retrieval and Google Gemini for generation."""
 
 import os
+import re
 import time
 
 from dotenv import load_dotenv
@@ -28,7 +29,7 @@ DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "en")
 SUPPORTED_LANGUAGES = os.getenv("SUPPORTED_LANGUAGES", "en,ur").split(",")
 
 
-SYSTEM_PROMPT = """You are the friendly AI receptionist for Nauman International Recruitment Agency (NIRA). You assist visitors with questions about study visas, work permits, and agency services.
+SYSTEM_PROMPT = """You are Sara, the friendly female AI receptionist for Nauman International Recruitment Agency (NIRA). You are a woman. You assist visitors with questions about study visas, work permits, and agency services.
 
 RESPONSE GUIDELINES:
 - Answer ONLY what was asked. Do NOT dump all available information.
@@ -49,6 +50,29 @@ CONTEXT:
 QUESTION: {question}
 
 ANSWER (precise to the question, 3-5 sentences, warm and spoken tone):"""
+
+URDU_SYSTEM_PROMPT = """You are Sara, the friendly female AI receptionist for Nauman International Recruitment Agency (NIRA). You are a woman.
+
+RESPONSE GUIDELINES:
+- You MUST respond ENTIRELY in Urdu script. Do NOT use any English words.
+- Use feminine gender forms throughout since you are a woman.
+- Answer ONLY what was asked. Do NOT dump all available information.
+- Keep responses to 3-5 sentences. Be concise but warm and conversational.
+- Use natural spoken Urdu that sounds good when read aloud by a digital avatar.
+- No markdown, no bullet points, no asterisks, no special formatting.
+- End with a short offer to help further.
+
+STRICT RULES:
+1. Use ONLY the context below. Never invent information.
+2. Stay precise to the question. Do not volunteer unrelated information.
+3. If the answer is not in the context, say in Urdu: "I'm sorry, I don't have that specific information right now, but I can connect you with one of our consultants who can help."
+
+CONTEXT:
+{context}
+
+QUESTION: {question}
+
+ANSWER (in Urdu script only, 3-5 sentences, feminine forms, warm spoken tone):"""
 
 
 print("Initializing NTIS Policy RAG Chatbot...")
@@ -76,10 +100,16 @@ llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     temperature=0.7,
     google_api_key=GOOGLE_API_KEY,
+    timeout=60,
 )
 
 prompt_template = PromptTemplate(
     template=SYSTEM_PROMPT,
+    input_variables=["context", "question"]
+)
+
+urdu_prompt_template = PromptTemplate(
+    template=URDU_SYSTEM_PROMPT,
     input_variables=["context", "question"]
 )
 
@@ -117,22 +147,39 @@ class ChatRequest(BaseModel):
         return v
 
 
-def run_rag_pipeline(message: str) -> str:
+def _invoke_with_retry(llm_instance, prompt, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            return llm_instance.invoke(prompt)
+        except Exception as e:
+            err = str(e)
+            if "RESOURCE_EXHAUSTED" in err or "429" in err or "503" in err or "UNAVAILABLE" in err:
+                match = re.search(r'retry in (\d+\.?\d*)s', err)
+                wait = min(float(match.group(1)) if match else 10, 15)
+                print(f"[Retry] Rate limited, waiting {wait:.0f}s (attempt {attempt+1}/{max_retries})...")
+                time.sleep(wait)
+            else:
+                raise
+    raise Exception("Max retries exceeded for Gemini API call")
+
+
+def run_rag_pipeline(message: str, language: str = "en") -> str:
     docs = retriever.invoke(message)
     print(f"[RAG] Retrieved {len(docs)} docs for query: {message!r}")
     for i, doc in enumerate(docs):
         print(f"  [Doc {i}] {doc.page_content[:120]!r}")
     context = "\n\n".join(doc.page_content for doc in docs)
-    prompt = prompt_template.format(context=context, question=message)
-    print(f"[RAG] Prompt length: {len(prompt)} chars")
-    response = llm.invoke(prompt)
+    template = urdu_prompt_template if language == "ur" else prompt_template
+    prompt = template.format(context=context, question=message)
+    print(f"[RAG] Prompt length: {len(prompt)} chars, language: {language}")
+    response = _invoke_with_retry(llm, prompt)
     answer = response.content if hasattr(response, "content") else str(response)
     print(f"[RAG] Answer: {answer[:200]!r}")
     return answer
 
 
 @app.post("/chat")
-async def chat(request: ChatRequest):
+def chat(request: ChatRequest):
     try:
         start_time = time.time()
         original_message = request.message
@@ -140,26 +187,15 @@ async def chat(request: ChatRequest):
         
         print(f"[Chat] Received message in {original_language}: {original_message[:100]}...")
         
-        # If input is Urdu and translation is enabled, translate to English first
-        if original_language == "ur" and translator:
-            print(f"[Chat] Translating Urdu input to English...")
-            english_message = translator.translate_urdu_to_english(original_message)
-            print(f"[Chat] Translated to English: {english_message[:100]}...")
+        # 1-call approach: send raw input directly to RAG + Gemini (no separate translation).
+        # Gemini understands Romanized Urdu (e.g. "mujhay visa k baray may batao").
+        # This is critical: free tier only allows ~20 RPD, so 1 call per query maximizes usage.
+        if original_language == "ur":
+            print(f"[Chat] Running RAG with direct Urdu output (1 API call)...")
+            final_answer = run_rag_pipeline(original_message, language="ur")
         else:
-            english_message = original_message
-        
-        # Run RAG pipeline in English
-        print(f"[Chat] Running RAG pipeline...")
-        english_answer = run_rag_pipeline(english_message)
-        
-        # If output should be Urdu and translation is enabled, translate response
-        if original_language == "ur" and translator:
-            print(f"[Chat] Translating English response to Urdu...")
-            urdu_answer = translator.translate_english_to_urdu(english_answer)
-            print(f"[Chat] Translated to Urdu: {urdu_answer[:100]}...")
-            final_answer = urdu_answer
-        else:
-            final_answer = english_answer
+            print(f"[Chat] Running RAG pipeline...")
+            final_answer = run_rag_pipeline(original_message)
         
         total_time = time.time() - start_time
         print(f"[Chat] Total processing time: {total_time:.2f}s")
@@ -172,9 +208,10 @@ async def chat(request: ChatRequest):
         
     except Exception as exc:
         print(f"[Chat Error] {exc}")
-        error_message = "I'm sorry, I encountered an error processing your request."
-        if request.language == "ur" and translator:
-            error_message = translator.translate_english_to_urdu(error_message)
+        if request.language == "ur":
+            error_message = "معذرت، آپ کی درخواست پر عمل کرنے میں خرابی ہوئی۔ براہ کرم دوبارہ کوشش کریں۔"
+        else:
+            error_message = "I'm sorry, I encountered an error processing your request."
         return {
             "response": error_message,
             "language": request.language,

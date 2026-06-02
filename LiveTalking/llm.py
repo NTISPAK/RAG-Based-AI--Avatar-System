@@ -26,7 +26,7 @@ def llm_response(message, nerfreal: BaseReal):
                 "message": message,
                 "language": CHAT_LANGUAGE
             },
-            timeout=30
+            timeout=180
         )
         
         end = time.perf_counter()
@@ -38,14 +38,17 @@ def llm_response(message, nerfreal: BaseReal):
             
             if not answer:
                 logger.warning("Empty response from RAG backend")
-                nerfreal.put_msg_txt("I apologize, but I couldn't generate a response.")
+                if CHAT_LANGUAGE == "ur":
+                    nerfreal.put_msg_txt("معذرت، میں جواب تیار نہیں کر سکی۔ براہ کرم دوبارہ کوشش کریں۔")
+                else:
+                    nerfreal.put_msg_txt("I apologize, but I couldn't generate a response.")
                 return
             
             logger.info(f"RAG answer length: {len(answer)} chars")
             
             # Split at sentence boundaries for high-quality TTS output.
             # Larger chunks produce better intonation and prosody from edge_tts.
-            sentences = re.split(r'(?<=[.!?])\s+', answer.strip())
+            sentences = re.split(r'(?<=[.!?۔])\s+', answer.strip())
             
             # Merge very short sentences together (< 40 chars) for smoother speech
             chunks = []
@@ -66,14 +69,26 @@ def llm_response(message, nerfreal: BaseReal):
                 nerfreal.put_msg_txt(chunk)
         else:
             logger.error(f"RAG backend error: {response.status_code} - {response.text}")
-            nerfreal.put_msg_txt("I apologize, but I encountered an error processing your request.")
+            if CHAT_LANGUAGE == "ur":
+                nerfreal.put_msg_txt("معذرت، آپ کی درخواست پر عمل کرنے میں خرابی ہوئی۔ براہ کرم دوبارہ کوشش کریں۔")
+            else:
+                nerfreal.put_msg_txt("I apologize, but I encountered an error processing your request.")
             
     except requests.exceptions.Timeout:
         logger.error("RAG backend request timed out")
-        nerfreal.put_msg_txt("I apologize, but the request timed out. Please try again.")
+        if CHAT_LANGUAGE == "ur":
+            nerfreal.put_msg_txt("معذرت، درخواست کا وقت ختم ہو گیا۔ براہ کرم دوبارہ کوشش کریں۔")
+        else:
+            nerfreal.put_msg_txt("I apologize, but the request timed out. Please try again.")
     except requests.exceptions.ConnectionError:
         logger.error(f"Could not connect to RAG backend at {RAG_BACKEND_URL}")
-        nerfreal.put_msg_txt("I apologize, but I cannot connect to the backend service.")
+        if CHAT_LANGUAGE == "ur":
+            nerfreal.put_msg_txt("معذرت، بیک اینڈ سروس سے رابطہ نہیں ہو سکا۔ براہ کرم دوبارہ کوشش کریں۔")
+        else:
+            nerfreal.put_msg_txt("I apologize, but I cannot connect to the backend service.")
     except Exception as e:
         logger.exception(f"Error calling RAG backend: {e}")
-        nerfreal.put_msg_txt("I apologize, but an unexpected error occurred.")    
+        if CHAT_LANGUAGE == "ur":
+            nerfreal.put_msg_txt("معذرت، ایک غیر متوقع خرابی ہوئی۔ براہ کرم دوبارہ کوشش کریں۔")
+        else:
+            nerfreal.put_msg_txt("I apologize, but an unexpected error occurred.")    

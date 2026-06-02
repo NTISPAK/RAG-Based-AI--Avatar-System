@@ -5,8 +5,10 @@ for the RAG chatbot system.
 """
 
 from langchain_google_genai import ChatGoogleGenerativeAI
+import re
 import time
 from typing import Optional
+import random
 
 
 class TranslationService:
@@ -17,7 +19,7 @@ class TranslationService:
         
         Args:
             api_key: Google API key for Gemini
-            model: Gemini model to use (default: gemini-2.5-flash)
+            model: Gemini model to use (default: gemini-2.0-flash)
         """
         self.llm = ChatGoogleGenerativeAI(
             model=model,
@@ -46,25 +48,27 @@ Urdu text: {urdu_text}
 
 English translation:"""
         
-        try:
-            response = self.llm.invoke(prompt)
-            translation = response.content.strip()
-            
-            # Log metrics
-            duration = time.time() - start_time
-            self.translation_count += 1
-            self.total_translation_time += duration
-            
-            print(f"[Translation] Urdu→English: {duration:.2f}s")
-            print(f"[Translation] Input: {urdu_text[:100]}...")
-            print(f"[Translation] Output: {translation[:100]}...")
-            
-            return translation
-            
-        except Exception as e:
-            print(f"[Translation Error] Urdu→English failed: {e}")
-            # Return original text if translation fails
-            return urdu_text
+        for attempt in range(3):
+            try:
+                response = self.llm.invoke(prompt)
+                translation = response.content.strip()
+                duration = time.time() - start_time
+                self.translation_count += 1
+                self.total_translation_time += duration
+                print(f"[Translation] Urdu->English: {duration:.2f}s")
+                print(f"[Translation] In: {urdu_text[:100]}...")
+                print(f"[Translation] Out: {translation[:100]}...")
+                return translation
+            except Exception as e:
+                err = str(e)
+                if ("RESOURCE_EXHAUSTED" in err or "429" in err) and attempt < 2:
+                    match = re.search(r'retry in (\d+\.?\d*)s', err)
+                    wait = min(float(match.group(1)) if match else 10, 15)
+                    print(f"[Translation] Rate limited, retrying in {wait:.0f}s...")
+                    time.sleep(wait)
+                else:
+                    print(f"[Translation Error] Urdu->English failed: {e}")
+                    return urdu_text
     
     def translate_english_to_urdu(self, english_text: str) -> str:
         """Translate English text to Urdu.
@@ -78,6 +82,7 @@ English translation:"""
         start_time = time.time()
         
         prompt = f"""Translate the following English text to Urdu.
+The speaker is a female assistant (Sara). Use feminine gender forms (مؤنث) throughout — feminine verb conjugations, feminine adjectives, and feminine pronouns for the speaker.
 Use natural, conversational Urdu that sounds good when spoken aloud.
 Provide ONLY the translation, no explanations or additional text.
 Use proper Urdu script (not Roman Urdu).
@@ -86,25 +91,27 @@ English text: {english_text}
 
 Urdu translation:"""
         
-        try:
-            response = self.llm.invoke(prompt)
-            translation = response.content.strip()
-            
-            # Log metrics
-            duration = time.time() - start_time
-            self.translation_count += 1
-            self.total_translation_time += duration
-            
-            print(f"[Translation] English→Urdu: {duration:.2f}s")
-            print(f"[Translation] Input: {english_text[:100]}...")
-            print(f"[Translation] Output: {translation[:100]}...")
-            
-            return translation
-            
-        except Exception as e:
-            print(f"[Translation Error] English→Urdu failed: {e}")
-            # Return original text if translation fails
-            return english_text
+        for attempt in range(3):
+            try:
+                response = self.llm.invoke(prompt)
+                translation = response.content.strip()
+                duration = time.time() - start_time
+                self.translation_count += 1
+                self.total_translation_time += duration
+                print(f"[Translation] English->Urdu: {duration:.2f}s")
+                print(f"[Translation] In: {english_text[:100]}...")
+                print(f"[Translation] Out: {translation[:100]}...")
+                return translation
+            except Exception as e:
+                err = str(e)
+                if ("RESOURCE_EXHAUSTED" in err or "429" in err) and attempt < 2:
+                    match = re.search(r'retry in (\d+\.?\d*)s', err)
+                    wait = min(float(match.group(1)) if match else 10, 15)
+                    print(f"[Translation] Rate limited, retrying in {wait:.0f}s...")
+                    time.sleep(wait)
+                else:
+                    print(f"[Translation Error] English->Urdu failed: {e}")
+                    return english_text
     
     def detect_language(self, text: str) -> str:
         """Detect if text is primarily Urdu or English.
