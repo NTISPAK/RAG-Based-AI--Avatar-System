@@ -17,9 +17,44 @@ from PIL import Image
 from tqdm import tqdm
 
 from face_alignment import FaceAlignment, LandmarksType
-from musetalk.utils.face_parsing import FaceParsing
 from musetalk.utils.blending import get_image_prepare_material
 from musetalk.models.vae import VAE
+
+# FaceParsing is optional; fallback to simple elliptical mask if BiSeNet weights missing
+_FACE_PARSING_AVAILABLE = False
+FaceParsing = None
+try:
+    from musetalk.utils.face_parsing import FaceParsing as _FP
+    # Also verify the weights file exists
+    _bisent_weights = './models/face-parse-bisent/79999_iter.pth'
+    if os.path.exists(_bisent_weights) and os.path.getsize(_bisent_weights) > 1000000:
+        FaceParsing = _FP
+        _FACE_PARSING_AVAILABLE = True
+    else:
+        print("[WARN] BiSeNet weights not found, using simple elliptical mask fallback")
+except Exception as e:
+    print(f"[WARN] FaceParsing not available ({e}), using simple elliptical mask fallback")
+
+
+class SimpleFaceMask:
+    """Fallback face mask generator using an ellipse inside the crop box."""
+    def __init__(self, left_cheek_width=80, right_cheek_width=80):
+        pass  # no weights needed
+
+    def __call__(self, image, size=(512, 512), mode="raw"):
+        """Return an elliptical mask image matching the input image size."""
+        if isinstance(image, str):
+            image = Image.open(image)
+        w, h = image.size
+        mask = np.zeros((h, w), dtype=np.uint8)
+        # Draw an ellipse covering most of the face area
+        cx, cy = w // 2, h // 2
+        a, b = int(w * 0.42), int(h * 0.48)  # slightly narrower ellipse
+        cv2.ellipse(mask, (cx, cy), (a, b), 0, 0, 360, 255, -1)
+        # Gaussian blur to feather edges
+        blur = cv2.GaussianBlur(mask, (51, 51), 0)
+        return Image.fromarray(blur)
+
 
 
 def video2imgs(vid_path, save_path, max_frames=10000):
@@ -91,7 +126,12 @@ def main():
     parser.add_argument("--gpu_id", type=int, default=0)
     args = parser.parse_args()
 
-    device = torch.device(f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device(f"cuda:{args.gpu_id}")
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
     print(f"Using device: {device}")
 
     # Paths
@@ -178,10 +218,14 @@ def main():
 
     # Step 4: Generate face parsing masks
     print("\n[4/5] Generating face masks...")
-    if args.version == "v15":
-        fp = FaceParsing(left_cheek_width=args.left_cheek_width, right_cheek_width=args.right_cheek_width)
+    if FaceParsing is not None:
+        if args.version == "v15":
+            fp = FaceParsing(left_cheek_width=args.left_cheek_width, right_cheek_width=args.right_cheek_width)
+        else:
+            fp = FaceParsing()
     else:
-        fp = FaceParsing()
+        fp = SimpleFaceMask()
+        print("  (Using SimpleFaceMask fallback - no BiSeNet weights)")
 
     mask_coords_list = []
     for i, frame in enumerate(tqdm(frame_list)):

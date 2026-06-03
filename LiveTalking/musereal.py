@@ -54,6 +54,7 @@ def load_model():
     vae.vae = vae.vae.half().to(device)
     #vae.vae.share_memory().to(device)
     unet.model = unet.model.half().to(device)
+    unet.device = device  # ensure unet.device matches where model weights actually are
     #unet.model.share_memory()
     # Initialize audio processor and Whisper model
     audio_processor = Audio2Feature(model_path="./models/whisper")

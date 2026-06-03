@@ -1,11 +1,15 @@
 from diffusers import AutoencoderKL
 import torch
-import torchvision.transforms as transforms
 import torch.nn.functional as F
 import cv2
 import numpy as np
 from PIL import Image
 import os
+
+
+def _normalize(tensor, mean=0.5, std=0.5):
+    """Manual replacement for torchvision.transforms.Normalize."""
+    return (tensor - mean) / std
 
 class VAE():
     """
@@ -33,7 +37,6 @@ class VAE():
             self._use_float16 = False
 
         self.scaling_factor = self.vae.config.scaling_factor
-        self.transform = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         self._resized_img = resized_img
         self._mask_tensor = self.get_mask_tensor()
         
@@ -74,7 +77,7 @@ class VAE():
         x = torch.squeeze(torch.FloatTensor(x))
         if half_mask:
             x = x * (self._mask_tensor>0.5)
-        x = self.transform(x)
+        x = _normalize(x)
         
         x = x.unsqueeze(0) # [1, 3, 256, 256] torch tensor
         x = x.to(self.vae.device)
