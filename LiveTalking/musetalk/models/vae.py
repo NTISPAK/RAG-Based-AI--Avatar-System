@@ -5,6 +5,9 @@ import cv2
 import numpy as np
 from PIL import Image
 import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from logger import logger
 
 
 def _normalize(tensor, mean=0.5, std=0.5):
@@ -29,6 +32,7 @@ class VAE():
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"))
         self.vae.to(self.device)
+        self.vae.eval()
 
         if use_float16:
             self.vae = self.vae.half()
@@ -105,7 +109,12 @@ class VAE():
         latents = (1/  self.scaling_factor) * latents
         # Cast to VAE dtype (FP32) and move to VAE device
         vae_device = next(self.vae.parameters()).device
-        image = self.vae.decode(latents.to(device=vae_device, dtype=self.vae.dtype)).sample
+        decoded = self.vae.decode(latents.to(device=vae_device, dtype=self.vae.dtype))
+        image = decoded.sample
+        # Diagnostic: log raw VAE tensor stats
+        logger.debug(f'[VAE-Diag] raw output min={image.min().item():.4f} max={image.max().item():.4f} '
+                     f'mean={image.mean().item():.4f} std={image.std().item():.4f} '
+                     f'shape={list(image.shape)} device={image.device}')
         image = torch.nan_to_num(image, nan=0.0, posinf=1.0, neginf=-1.0)
         image = (image / 2 + 0.5).clamp(0, 1)
         image = image.detach().cpu().permute(0, 2, 3, 1).float().numpy()

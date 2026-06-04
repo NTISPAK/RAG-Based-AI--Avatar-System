@@ -205,11 +205,13 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
                 pred_latents = unet.model(latent_batch,
                                             timesteps,
                                             encoder_hidden_states=audio_feature_batch).sample
-                pred_latents = pred_latents.clamp(-10, 10)  # prevent NaN in FP16 VAE decode
-                t_unet = time.perf_counter() - t
+            pred_latents = pred_latents.float().clamp(-10, 10)
+            logger.debug(f'[UNet-Diag] pred_latents min={pred_latents.min().item():.4f} max={pred_latents.max().item():.4f} '
+                         f'mean={pred_latents.mean().item():.4f} std={pred_latents.std().item():.4f}')
+            t_unet = time.perf_counter() - t
 
-                t=time.perf_counter()
-                recon = vae.decode_latents(pred_latents)
+            t=time.perf_counter()
+            recon = vae.decode_latents(pred_latents)
             t_vae = time.perf_counter() - t
 
             counttime += (time.perf_counter() - t_total)
