@@ -56,7 +56,12 @@ def load_model():
     #vae.vae.share_memory().to(device)
     unet.model = unet.model.to(device=device, dtype=model_dtype)
     unet.device = device  # ensure unet.device matches where model weights actually are
-    #unet.model.share_memory()
+    if device.type == "cuda" and hasattr(torch, 'compile'):
+        try:
+            unet.model = torch.compile(unet.model, mode='reduce-overhead')
+            logger.info('[MuseTalk] UNet compiled with torch.compile (reduce-overhead)')
+        except Exception as e:
+            logger.warning(f'[MuseTalk] torch.compile failed, using eager mode: {e}')
     # Initialize audio processor and Whisper model
     audio_processor = Audio2Feature(model_path="./models/whisper")
     return vae, unet, pe, timesteps, audio_processor
@@ -177,7 +182,7 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
                 res_frame_queue.put((None,__mirror_index(length,index),audio_frames[i*2:i*2+2]))
                 index = index + 1
         else:
-            # print('infer=======')
+            t_total = time.perf_counter()
             t=time.perf_counter()
             whisper_batch = np.stack(whisper_chunks)
             latent_batch = []
@@ -186,41 +191,37 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
                 latent = input_latent_list_cycle[idx]
                 latent_batch.append(latent)
             latent_batch = torch.cat(latent_batch, dim=0)
-            
-            # for i, (whisper_batch,latent_batch) in enumerate(gen):
             audio_feature_batch = torch.from_numpy(whisper_batch)
             audio_feature_batch = audio_feature_batch.to(device=unet.device,
                                                             dtype=unet.model.dtype)
             audio_feature_batch = pe(audio_feature_batch)
             latent_batch = latent_batch.to(device=unet.device, dtype=unet.model.dtype)
-            # print('prepare time:',time.perf_counter()-t)
-            # t=time.perf_counter()
+            t_prep = time.perf_counter() - t
 
-            pred_latents = unet.model(latent_batch, 
-                                        timesteps, 
-                                        encoder_hidden_states=audio_feature_batch).sample
-            # print('unet time:',time.perf_counter()-t)
-            # t=time.perf_counter()
+            t=time.perf_counter()
+            with torch.autocast(device_type=unet.device.type, enabled=(unet.device.type == 'cuda')):
+                pred_latents = unet.model(latent_batch,
+                                            timesteps,
+                                            encoder_hidden_states=audio_feature_batch).sample
+            t_unet = time.perf_counter() - t
+
+            t=time.perf_counter()
             recon = vae.decode_latents(pred_latents)
-            # infer_inqueue.put((whisper_batch,latent_batch,sessionid))
-            # recon,outsessionid = infer_outqueue.get()
-            # if outsessionid != sessionid:
-            #     print('outsessionid:',outsessionid,' mysessionid:',sessionid)
+            t_vae = time.perf_counter() - t
 
-            # print('vae time:',time.perf_counter()-t)
-            #print('diffusion len=',len(recon))
-            counttime += (time.perf_counter() - t)
+            counttime += (time.perf_counter() - t_total)
             count += batch_size
-            #_totalframe += 1
             if count>=100:
                 logger.info(f"------actual avg infer fps:{count/counttime:.4f}")
                 count=0
                 counttime=0
+
+            t=time.perf_counter()
             for i,res_frame in enumerate(recon):
-                #self.__pushmedia(res_frame,loop,audio_track,video_track)
                 res_frame_queue.put((res_frame,__mirror_index(length,index),audio_frames[i*2:i*2+2]))
                 index = index + 1
-            #print('total batch time:',time.perf_counter()-starttime)            
+            t_queue = time.perf_counter() - t
+            logger.debug(f'[Timing] prep={t_prep*1000:.0f}ms unet={t_unet*1000:.0f}ms vae={t_vae*1000:.0f}ms queue_put={t_queue*1000:.0f}ms')            
     logger.info('musereal inference processor stop')
 
 class MuseReal(BaseReal):
@@ -295,6 +296,10 @@ class MuseReal(BaseReal):
         combine_frame = get_image_blending(ori_frame,res_frame,bbox,mask,mask_crop_box)
         return combine_frame
             
+    def _asr_loop(self, quit_event):
+        while not quit_event.is_set():
+            self.asr.run_step()
+
     def render(self,quit_event,loop=None,audio_track=None,video_track=None):
         #if self.opt.asr:
         #     self.asr.warm_up()
@@ -302,45 +307,31 @@ class MuseReal(BaseReal):
         self.init_customindex()
         self.tts.render(quit_event)
         
-        #self.render_event.set() #start infer process render
         infer_quit_event = Event()
         infer_thread = Thread(target=inference, args=(infer_quit_event,self.batch_size,self.input_latent_list_cycle,
                                            self.asr.feat_queue,self.asr.output_queue,self.res_frame_queue,
-                                           self.vae, self.unet, self.pe,self.timesteps)) #mp.Process
+                                           self.vae, self.unet, self.pe,self.timesteps))
         infer_thread.start()
+
+        asr_quit_event = Event()
+        asr_thread = Thread(target=self._asr_loop, args=(asr_quit_event,))
+        asr_thread.daemon = True
+        asr_thread.start()
         
         process_quit_event = Event()
         process_thread = Thread(target=self.process_frames, args=(process_quit_event,loop,audio_track,video_track))
         process_thread.start()
 
-        
-        count=0
-        totaltime=0
-        _starttime=time.perf_counter()
-        #_totalframe=0
         while not quit_event.is_set():
-            # update texture every frame
-            # audio stream thread...
-            t = time.perf_counter()
-            self.asr.run_step()
-            #self.test_step(loop,audio_track,video_track)
-            # totaltime += (time.perf_counter() - t)
-            # count += self.opt.batch_size
-            # if count>=100:
-            #     print(f"------actual avg infer fps:{count/totaltime:.4f}")
-            #     count=0
-            #     totaltime=0
-            if video_track and video_track._queue.qsize()>=1.5*self.opt.batch_size:
-                logger.debug('sleep qsize=%d',video_track._queue.qsize())
-                time.sleep(0.04*video_track._queue.qsize()*0.8)
-            # if video_track._queue.qsize()>=5:
-            #     print('sleep qsize=',video_track._queue.qsize())
-            #     time.sleep(0.04*video_track._queue.qsize()*0.8)
-                
-            # delay = _starttime+_totalframe*0.04-time.perf_counter() #40ms
-            # if delay > 0:
-            #     time.sleep(delay)
+            if video_track and video_track._queue.qsize() >= 2 * self.opt.batch_size:
+                logger.debug('video queue backlog qsize=%d', video_track._queue.qsize())
+                time.sleep(0.01)
+            else:
+                time.sleep(0.005)
         logger.info('musereal thread stop')
+
+        asr_quit_event.set()
+        asr_thread.join(timeout=1)
 
         infer_quit_event.set()
         infer_thread.join()

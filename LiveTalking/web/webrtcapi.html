@@ -257,6 +257,10 @@
             <button type="submit" class="btn btn-primary" id="send-btn">
                 <span class="spinner" id="send-spinner"></span>Send
             </button>
+            <button type="button" class="btn" id="voice-preview-btn" title="Preview TTS voice only (no avatar)" style="background:var(--surface2);border:1px solid var(--border);padding:8px 14px;display:flex;align-items:center;gap:6px;">
+                <svg id="voice-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 010 14.14"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+                <span id="voice-btn-label">Test Voice</span>
+            </button>
         </form>
     </div>
 </div>
@@ -330,6 +334,45 @@ $(document).ready(function() {
         });
 
         $('#message').val('').focus();
+    });
+
+    // --- Voice Preview: play TTS audio directly without avatar ---
+    var voiceAudio = null;
+    $('#voice-preview-btn').on('click', function() {
+        var message = $('#message').val().trim();
+        if (!message) {
+            $('#response-box').addClass('visible').html('<em style="color:var(--text-muted)">Type something first to preview voice.</em>');
+            return;
+        }
+        // Stop any playing preview
+        if (voiceAudio) { voiceAudio.pause(); voiceAudio = null; }
+        $('#voice-btn-label').text('Loading...');
+        $('#voice-preview-btn').prop('disabled', true);
+        fetch('/tts_preview', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text: message})
+        }).then(function(res) {
+            if (!res.ok) throw new Error('TTS preview failed: ' + res.status);
+            return res.blob();
+        }).then(function(blob) {
+            var url = URL.createObjectURL(blob);
+            voiceAudio = new Audio(url);
+            voiceAudio.onended = function() {
+                $('#voice-btn-label').text('Test Voice');
+                $('#voice-preview-btn').prop('disabled', false);
+                URL.revokeObjectURL(url);
+            };
+            voiceAudio.play();
+            $('#voice-btn-label').text('Playing...');
+            $('#voice-preview-btn').prop('disabled', false);
+            $('#response-box').addClass('visible').html('<em style="color:var(--success)">🔊 Playing TTS preview (no avatar)</em>');
+        }).catch(function(err) {
+            console.error('Voice preview error:', err);
+            $('#voice-btn-label').text('Test Voice');
+            $('#voice-preview-btn').prop('disabled', false);
+            $('#response-box').addClass('visible').html('<span style="color:var(--danger)">Voice preview failed: ' + err.message + '</span>');
+        });
     });
 
     // --- Enter to send (Shift+Enter for newline) ---

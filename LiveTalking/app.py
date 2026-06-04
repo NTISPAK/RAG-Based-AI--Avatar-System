@@ -288,6 +288,25 @@ async def is_speaking(request):
     )
 
 
+async def tts_preview(request):
+    try:
+        params = await request.json()
+        text = params.get('text', '').strip()
+        voice = params.get('voice', opt.REF_FILE if opt else 'en-US-JennyNeural')
+        if not text:
+            return web.Response(status=400, text='no text')
+        import edge_tts, io
+        buf = io.BytesIO()
+        communicate = edge_tts.Communicate(text, voice)
+        async for chunk in communicate.stream():
+            if chunk['type'] == 'audio':
+                buf.write(chunk['data'])
+        buf.seek(0)
+        return web.Response(body=buf.read(), content_type='audio/mpeg')
+    except Exception as e:
+        logger.exception('tts_preview error:')
+        return web.Response(status=500, text=str(e))
+
 async def on_shutdown(app):
     # close peer connections
     coros = [pc.close() for pc in pcs]
@@ -414,6 +433,7 @@ if __name__ == '__main__':
     appasync.router.add_post("/record", record)
     appasync.router.add_post("/interrupt_talk", interrupt_talk)
     appasync.router.add_post("/is_speaking", is_speaking)
+    appasync.router.add_post("/tts_preview", tts_preview)
     appasync.router.add_static('/',path='web')
 
     # Configure default CORS settings.
