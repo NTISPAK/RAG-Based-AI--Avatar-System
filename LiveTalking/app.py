@@ -48,7 +48,6 @@ from logger import logger
 import gc
 import time
 import cv2
-import librosa
 import subprocess
 import os
 import io
@@ -315,6 +314,10 @@ async def tts_preview(request):
 
 async def render_video(request):
     """Generate a full MP4 video from text (TTS + offline MuseTalk inference)."""
+    try:
+        import librosa
+    except ImportError:
+        return web.Response(status=503, text='librosa not installed. Run: pip install librosa')
     try:
         params = await request.json()
         text = params.get('text', '').strip()
