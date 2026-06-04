@@ -50,10 +50,9 @@ def load_model():
     device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"))
     timesteps = torch.tensor([0], device=device)
     model_dtype = torch.float16 if device.type == "cuda" else torch.float32
-    logger.info(f'[MuseTalk] UNet/PE/VAE dtype={model_dtype} on {device}')
+    logger.info(f'[MuseTalk] UNet/PE dtype={model_dtype}, VAE dtype=float32 on {device}')
     pe = pe.to(device=device, dtype=model_dtype)
-    vae.vae = vae.vae.to(device=device, dtype=model_dtype)
-    #vae.vae.share_memory().to(device)
+    vae.vae = vae.vae.float().to(device)
     unet.model = unet.model.to(device=device, dtype=model_dtype)
     unet.device = device  # ensure unet.device matches where model weights actually are
     if device.type == "cuda" and hasattr(torch, 'compile'):
