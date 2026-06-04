@@ -50,7 +50,7 @@ def load_model():
     device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"))
     timesteps = torch.tensor([0], device=device)
     pe = pe.half().to(device)
-    vae.vae = vae.vae.half().to(device)
+    vae.vae = vae.vae.float().to(device)
     #vae.vae.share_memory().to(device)
     unet.model = unet.model.half().to(device)
     unet.device = device  # ensure unet.device matches where model weights actually are
@@ -152,8 +152,9 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
         dropped_audio = []
         while not quit_event.is_set():
             try:
+                next_whisper_chunks = audio_feat_queue.get_nowait()
                 dropped_audio.extend([audio_out_queue.get_nowait() for _ in range(batch_size*2)])
-                whisper_chunks = audio_feat_queue.get_nowait()
+                whisper_chunks = next_whisper_chunks
                 skipped_batches += 1
             except queue.Empty:
                 break

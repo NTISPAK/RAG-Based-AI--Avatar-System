@@ -103,7 +103,8 @@ class VAE():
         :return: A NumPy array representing the decoded image.
         """
         latents = (1/  self.scaling_factor) * latents
-        image = self.vae.decode(latents.to(self.vae.dtype)).sample
+        image = self.vae.decode(latents.to(device=self.vae.device, dtype=self.vae.dtype)).sample
+        image = torch.nan_to_num(image, nan=0.0, posinf=1.0, neginf=-1.0)
         image = (image / 2 + 0.5).clamp(0, 1)
         image = image.detach().cpu().permute(0, 2, 3, 1).float().numpy()
         image = (image * 255).round().astype("uint8")
