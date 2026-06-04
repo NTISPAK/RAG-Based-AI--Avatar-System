@@ -48,8 +48,10 @@ from logger import logger
 import gc
 
 if torch.cuda.is_available():
-    torch.backends.cudnn.benchmark = True
-    logger.info('[CUDA] cudnn.benchmark enabled for optimized inference')
+    _gpu_name = torch.cuda.get_device_name(0)
+    _has_tensor_cores = torch.cuda.get_device_capability()[0] >= 7 and "16" not in _gpu_name
+    torch.backends.cudnn.benchmark = _has_tensor_cores
+    logger.info(f'[CUDA] cudnn.benchmark={_has_tensor_cores} on {_gpu_name}')
 
 
 app = Flask(__name__)
