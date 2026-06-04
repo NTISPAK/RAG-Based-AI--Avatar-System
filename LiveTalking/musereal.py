@@ -186,7 +186,7 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
             audio_feature_batch = audio_feature_batch.to(device=unet.device,
                                                             dtype=unet.model.dtype)
             audio_feature_batch = pe(audio_feature_batch)
-            latent_batch = latent_batch.to(dtype=unet.model.dtype)
+            latent_batch = latent_batch.to(device=unet.device, dtype=unet.model.dtype)
             # print('prepare time:',time.perf_counter()-t)
             # t=time.perf_counter()
 
