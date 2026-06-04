@@ -50,9 +50,9 @@ def load_model():
     device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"))
     timesteps = torch.tensor([0], device=device)
     model_dtype = torch.float16 if device.type == "cuda" else torch.float32
-    logger.info(f'[MuseTalk] UNet/PE dtype={model_dtype}, VAE dtype=float32 on {device}')
+    logger.info(f'[MuseTalk] UNet/PE/VAE dtype={model_dtype} on {device}')
     pe = pe.to(device=device, dtype=model_dtype)
-    vae.vae = vae.vae.float().to(device)
+    vae.vae = vae.vae.to(device=device, dtype=model_dtype)
     #vae.vae.share_memory().to(device)
     unet.model = unet.model.to(device=device, dtype=model_dtype)
     unet.device = device  # ensure unet.device matches where model weights actually are
@@ -206,10 +206,11 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
                 pred_latents = unet.model(latent_batch,
                                             timesteps,
                                             encoder_hidden_states=audio_feature_batch).sample
-            t_unet = time.perf_counter() - t
+                pred_latents = pred_latents.clamp(-10, 10)  # prevent NaN in FP16 VAE decode
+                t_unet = time.perf_counter() - t
 
-            t=time.perf_counter()
-            recon = vae.decode_latents(pred_latents)
+                t=time.perf_counter()
+                recon = vae.decode_latents(pred_latents)
             t_vae = time.perf_counter() - t
 
             counttime += (time.perf_counter() - t_total)
