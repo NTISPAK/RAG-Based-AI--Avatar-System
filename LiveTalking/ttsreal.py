@@ -118,6 +118,12 @@ class EdgeTTS(BaseTTS):
                 eventpoint.update(**textevent) #eventpoint={'status':'end','text':text,'msgevent':textevent}
             self.parent.put_audio_frame(stream[idx:idx+self.chunk],eventpoint)
             idx += self.chunk
+        # Silence padding: push ~15 silent chunks so mouth settles to idle
+        silence_chunk = np.zeros(self.chunk, dtype=np.float32)
+        for _ in range(15):
+            if self.state != State.RUNNING:
+                break
+            self.parent.put_audio_frame(silence_chunk, {})
         #if streamlen>0:  #skip last frame(not 20ms)
         #    self.queue.put(stream[idx:])
         self.input_stream.seek(0)
