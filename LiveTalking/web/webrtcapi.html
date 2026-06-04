@@ -235,7 +235,9 @@
     <div class="controls">
         <button class="btn btn-primary" id="start" onclick="start()">Start</button>
         <button class="btn btn-danger" id="stop" style="display:none" onclick="stop()">Stop</button>
-        <div class="option-row" style="margin-left:auto;">
+        <div class="option-row" style="margin-left:auto;gap:12px;">
+            <input id="mode-toggle" type="checkbox" checked/>
+            <label for="mode-toggle" title="Test Mode = avatar echoes what you type (no backend needed)">Test Mode</label>
             <input id="use-stun" type="checkbox"/>
             <label for="use-stun">STUN server</label>
         </div>
@@ -244,7 +246,7 @@
     <input type="hidden" id="sessionid" value="0">
 
     <div class="chat-area">
-        <h3>Ask a policy question</h3>
+        <h3 id="chat-heading">Test Mode — type anything and the avatar will speak it</h3>
         <div id="response-box"></div>
         <div class="stt-status" id="stt-status"></div>
         <form id="echo-form" class="input-row">
@@ -267,35 +269,55 @@
 <script type="text/javascript" charset="utf-8">
 $(document).ready(function() {
 
-    // --- Send question to RAG via LiveTalking ---
+    function updateModeUI() {
+        var isTest = $('#mode-toggle').is(':checked');
+        if (isTest) {
+            $('#chat-heading').text('Test Mode — type anything and the avatar will speak it');
+            $('#message').attr('placeholder', 'Type anything and the avatar will repeat it...');
+        } else {
+            $('#chat-heading').text('RAG Chat — Ask a policy question');
+            $('#message').attr('placeholder', 'Type or click mic to speak...');
+        }
+    }
+    $('#mode-toggle').on('change', updateModeUI);
+    updateModeUI();
+
+    // --- Send text to avatar (echo or chat) ---
     $('#echo-form').on('submit', function(e) {
         e.preventDefault();
         var message = $('#message').val().trim();
         if (!message) return;
 
         var sessionid = parseInt($('#sessionid').val());
-        console.log('Sending:', message, 'session:', sessionid);
+        var isTest = $('#mode-toggle').is(':checked');
+        var type = isTest ? 'echo' : 'chat';
+        console.log('Sending [' + type + ']:', message, 'session:', sessionid);
 
         // Show spinner & disable send
         $('#send-spinner').addClass('active');
         $('#send-btn').prop('disabled', true);
 
-        // Show response box with "thinking" state
-        $('#response-box').addClass('visible').html('<em style="color:var(--text-muted)">Thinking...</em>');
+        if (isTest) {
+            $('#response-box').addClass('visible').html('<em style="color:var(--text-muted)">Speaking: ' + $('<div>').text(message).html() + '</em>');
+        } else {
+            $('#response-box').addClass('visible').html('<em style="color:var(--text-muted)">Thinking...</em>');
+        }
 
         fetch('/human', {
             body: JSON.stringify({
                 text: message,
-                type: 'chat',
+                type: type,
                 interrupt: true,
                 sessionid: sessionid,
             }),
             headers: { 'Content-Type': 'application/json' },
             method: 'POST'
         }).then(function(res) {
-            // Request accepted — avatar will speak the answer
-            $('#response-box').html('<em style="color:var(--text-muted)">Avatar is responding...</em>');
-            // Re-enable after a short delay (response streams via WebRTC audio)
+            if (isTest) {
+                $('#response-box').html('<span style="color:var(--success)">Avatar spoke: ' + $('<div>').text(message).html() + '</span>');
+            } else {
+                $('#response-box').html('<em style="color:var(--text-muted)">Avatar is responding...</em>');
+            }
             setTimeout(function() {
                 $('#send-spinner').removeClass('active');
                 $('#send-btn').prop('disabled', false);

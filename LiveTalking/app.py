@@ -47,6 +47,10 @@ from typing import Dict
 from logger import logger
 import gc
 
+if torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = True
+    logger.info('[CUDA] cudnn.benchmark enabled for optimized inference')
+
 
 app = Flask(__name__)
 #sockets = Sockets(app)

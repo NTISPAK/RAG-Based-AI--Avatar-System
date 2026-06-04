@@ -18,7 +18,8 @@ from __future__ import annotations
 import time
 import numpy as np
 import soundfile as sf
-import resampy
+from scipy import signal
+from fractions import Fraction
 import asyncio
 import edge_tts
 
@@ -134,7 +135,8 @@ class EdgeTTS(BaseTTS):
     
         if sample_rate != self.sample_rate and stream.shape[0]>0:
             logger.info(f'[WARN] audio sample rate is {sample_rate}, resampling into {self.sample_rate}.')
-            stream = resampy.resample(x=stream, sr_orig=sample_rate, sr_new=self.sample_rate)
+            frac = Fraction(self.sample_rate, sample_rate).limit_denominator(1000)
+            stream = signal.resample_poly(stream, frac.numerator, frac.denominator)
 
         return stream
     

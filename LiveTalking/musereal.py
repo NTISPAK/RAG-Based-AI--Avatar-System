@@ -25,7 +25,6 @@ import torch.nn.functional as F
 import cv2
 import glob
 import pickle
-import copy
 
 import queue
 from queue import Queue
@@ -141,6 +140,7 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
     index = 0
     count=0
     counttime=0
+    skipped_batches=0
     logger.info('start inference')
     while not quit_event.is_set():
         starttime=time.perf_counter()
@@ -148,6 +148,17 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
             whisper_chunks = audio_feat_queue.get(block=True, timeout=1)
         except queue.Empty:
             continue
+        # Catch-up: if multiple batches are queued, drop old ones to reduce latency
+        dropped_audio = []
+        while not quit_event.is_set():
+            try:
+                dropped_audio.extend([audio_out_queue.get_nowait() for _ in range(batch_size*2)])
+                whisper_chunks = audio_feat_queue.get_nowait()
+                skipped_batches += 1
+            except queue.Empty:
+                break
+        if skipped_batches > 0 and skipped_batches % 10 == 0:
+            logger.info(f'[Perf] Dropped {skipped_batches} old batches to catch up')
         is_all_silence=True
         audio_frames = []
         for _ in range(batch_size*2):
@@ -268,7 +279,7 @@ class MuseReal(BaseReal):
 
     def paste_back_frame(self,pred_frame,idx:int):
         bbox = self.coord_list_cycle[idx]
-        ori_frame = copy.deepcopy(self.frame_list_cycle[idx])
+        ori_frame = self.frame_list_cycle[idx].copy()
         x1, y1, x2, y2 = bbox
 
         res_frame = cv2.resize(pred_frame.astype(np.uint8),(x2-x1,y2-y1))
