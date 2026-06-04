@@ -312,6 +312,18 @@ async def tts_preview(request):
         logger.exception('tts_preview error:')
         return web.Response(status=500, text=str(e))
 
+def find_ffmpeg():
+    """Locate ffmpeg executable dynamically (handles Windows PATH refresh issues)."""
+    import shutil
+    exe = shutil.which('ffmpeg')
+    if exe:
+        return exe
+    # Common Windows install paths
+    for p in [r'C:\ProgramData\chocolatey\bin\ffmpeg.exe', r'C:\ffmpeg\bin\ffmpeg.exe', r'C:\Users\ASUS-PC\scoop\shims\ffmpeg.exe']:
+        if os.path.exists(p):
+            return p
+    return 'ffmpeg'
+
 async def render_video(request):
     """Generate a full MP4 video from text (TTS + offline MuseTalk inference)."""
     try:
@@ -454,8 +466,9 @@ async def render_video(request):
             writer.release()
 
             # Mux with audio
+            ffmpeg_exe = find_ffmpeg()
             cmd = [
-                'ffmpeg', '-y',
+                ffmpeg_exe, '-y',
                 '-i', temp_video,
                 '-i', temp_audio,
                 '-c:v', 'libx264', '-preset', 'fast',
