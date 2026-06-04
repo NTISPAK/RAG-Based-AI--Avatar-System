@@ -291,6 +291,17 @@ class MuseReal(BaseReal):
     def paste_back_frame(self,pred_frame,idx:int):
         bbox = self.coord_list_cycle[idx]
         ori_frame = self.frame_list_cycle[idx].copy()
+        if pred_frame is None:
+            return ori_frame
+        if not np.isfinite(pred_frame).all():
+            logger.warning('[MuseTalk] invalid generated mouth frame; using original frame')
+            return ori_frame
+        mouth_half = pred_frame[pred_frame.shape[0]//2:, :, :]
+        mouth_mean = float(np.mean(mouth_half))
+        mouth_std = float(np.std(mouth_half))
+        if mouth_std < 4.0 and 90.0 <= mouth_mean <= 165.0:
+            logger.warning(f'[MuseTalk] flat/grey generated mouth area mean={mouth_mean:.1f} std={mouth_std:.1f}; using original frame')
+            return ori_frame
         x1, y1, x2, y2 = bbox
 
         res_frame = cv2.resize(pred_frame.astype(np.uint8),(x2-x1,y2-y1))
