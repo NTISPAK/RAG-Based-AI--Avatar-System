@@ -49,8 +49,15 @@ def load_model():
     vae, unet, pe = load_all_model()
     device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"))
     timesteps = torch.tensor([0], device=device)
-    model_dtype = torch.float16 if device.type == "cuda" else torch.float32
-    logger.info(f'[MuseTalk] UNet/PE dtype={model_dtype}, VAE dtype=float32 on {device}')
+    # Only use FP16 on GPUs with Tensor Cores (RTX 20/30/40, A100, H100, etc.)
+    # GTX 1660 and other non-RTX cards lack Tensor Cores and produce NaN in FP16
+    if device.type == "cuda":
+        gpu_name = torch.cuda.get_device_name().lower()
+        has_tensor_cores = any(x in gpu_name for x in ['rtx', 'a100', 'h100', 'titan rtx'])
+        model_dtype = torch.float16 if has_tensor_cores else torch.float32
+    else:
+        model_dtype = torch.float32
+    logger.info(f'[MuseTalk] UNet/PE dtype={model_dtype}, VAE dtype=float32 on {device} ({torch.cuda.get_device_name() if device.type=="cuda" else "cpu"})')
     pe = pe.to(device=device, dtype=model_dtype)
     vae.vae = vae.vae.float().to(device)
     unet.model = unet.model.to(device=device, dtype=model_dtype)
