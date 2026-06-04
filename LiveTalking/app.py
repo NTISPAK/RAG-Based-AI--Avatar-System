@@ -398,7 +398,12 @@ if __name__ == '__main__':
         logger.info(opt)
         model = load_model()
         avatar = load_avatar(opt.avatar_id) 
-        warm_up(opt.batch_size,model)      
+        warm_up(opt.batch_size,model)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            reserved = torch.cuda.memory_reserved(0)/1024**3
+            allocated = torch.cuda.memory_allocated(0)/1024**3
+            logger.info(f'[VRAM] after warmup: allocated={allocated:.2f}GB reserved={reserved:.2f}GB')
     elif opt.model == 'wav2lip':
         from lipreal import LipReal,load_model,load_avatar,warm_up
         logger.info(opt)
