@@ -172,7 +172,7 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
             except queue.Empty:
                 break
         if skipped_batches > 0 and skipped_batches % 10 == 0:
-            logger.info(f'[Perf] Dropped {skipped_batches} old batches to catch up')
+            logger.debug(f'[Perf] Dropped {skipped_batches} old batches to catch up')
         is_all_silence=True
         audio_frames = []
         for _ in range(batch_size*2):
