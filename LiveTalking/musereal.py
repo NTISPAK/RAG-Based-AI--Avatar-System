@@ -49,9 +49,8 @@ def load_model():
     vae, unet, pe = load_all_model()
     device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"))
     timesteps = torch.tensor([0], device=device)
-    use_fp16 = device.type == "cuda" and torch.cuda.get_device_capability()[0] >= 7 and "16" not in torch.cuda.get_device_name(0)
-    model_dtype = torch.float16 if use_fp16 else torch.float32
-    logger.info(f'[MuseTalk] using {model_dtype} on {device}')
+    model_dtype = torch.float16 if device.type == "cuda" else torch.float32
+    logger.info(f'[MuseTalk] UNet/PE dtype={model_dtype}, VAE dtype=float32 on {device}')
     pe = pe.to(device=device, dtype=model_dtype)
     vae.vae = vae.vae.float().to(device)
     #vae.vae.share_memory().to(device)
@@ -236,7 +235,7 @@ class MuseReal(BaseReal):
 
         self.batch_size = opt.batch_size
         self.idx = 0
-        self.res_frame_queue = mp.Queue(self.batch_size*2)
+        self.res_frame_queue = mp.Queue(self.batch_size*4)
 
         self.vae, self.unet, self.pe, self.timesteps, self.audio_processor = model
         self.frame_list_cycle,self.mask_list_cycle,self.coord_list_cycle,self.mask_coords_list_cycle, self.input_latent_list_cycle = avatar
