@@ -372,6 +372,19 @@ async def render_video(request):
         num_video_frames = int(audio_duration * fps)
         logger.info(f'[RenderVideo] Audio: {audio_duration:.2f}s -> {num_video_frames} frames')
 
+        # 2a. Detect silence per video frame (RMS energy threshold)
+        samples_per_frame = int(16000 / fps)
+        silence_threshold = 0.015  # RMS below this = silent
+        is_speaking_mask = []
+        for f in range(num_video_frames):
+            start = f * samples_per_frame
+            end = start + samples_per_frame
+            seg = wav[start:end]
+            rms = np.sqrt(np.mean(seg**2)) if len(seg) > 0 else 0.0
+            is_speaking_mask.append(rms >= silence_threshold)
+        silent_count = sum(1 for x in is_speaking_mask if not x)
+        logger.info(f'[RenderVideo] Silence detection: {silent_count}/{num_video_frames} silent frames will use original mouth')
+
         # 3. Extract Whisper features
         t0 = time.perf_counter()
         whisper_features = audio_processor.audio2feat(wav)
@@ -396,59 +409,83 @@ async def render_video(request):
                 batch_end = min(i + batch_size, num_video_frames)
                 actual_batch = batch_end - i
 
-                latent_batch = []
-                whisper_batch = []
+                # Split batch into speaking (needs inference) vs silent (original frame)
+                speaking_indices = []
+                silent_indices = []
                 for j in range(actual_batch):
                     idx = i + j
-                    m_idx = mirror_index(length, idx)
-                    latent_batch.append(input_latent_list_cycle[m_idx])
-                    feat, _ = audio_processor.get_sliced_feature(
-                        feature_array=whisper_features,
-                        vid_idx=idx,
-                        audio_feat_length=[2, 2],
-                        fps=fps,
-                    )
-                    whisper_batch.append(feat)
+                    if is_speaking_mask[idx]:
+                        speaking_indices.append(j)
+                    else:
+                        silent_indices.append(j)
 
-                latent_batch = torch.cat(latent_batch, dim=0)
-                whisper_batch = np.stack(whisper_batch, axis=0)
-                audio_feature_batch = torch.from_numpy(whisper_batch).to(device=device, dtype=unet.model.dtype)
-                audio_feature_batch = pe(audio_feature_batch)
+                # Run inference only for speaking frames
+                if speaking_indices:
+                    latent_batch = []
+                    whisper_batch = []
+                    for j in speaking_indices:
+                        idx = i + j
+                        m_idx = mirror_index(length, idx)
+                        latent_batch.append(input_latent_list_cycle[m_idx])
+                        feat, _ = audio_processor.get_sliced_feature(
+                            feature_array=whisper_features,
+                            vid_idx=idx,
+                            audio_feat_length=[2, 2],
+                            fps=fps,
+                        )
+                        whisper_batch.append(feat)
 
-                # UNet
-                if use_autocast:
-                    with torch.autocast(device_type=device.type, enabled=True):
+                    latent_batch = torch.cat(latent_batch, dim=0)
+                    whisper_batch = np.stack(whisper_batch, axis=0)
+                    audio_feature_batch = torch.from_numpy(whisper_batch).to(device=device, dtype=unet.model.dtype)
+                    audio_feature_batch = pe(audio_feature_batch)
+
+                    if use_autocast:
+                        with torch.autocast(device_type=device.type, enabled=True):
+                            pred_latents = unet.model(latent_batch, timesteps, encoder_hidden_states=audio_feature_batch).sample
+                    else:
                         pred_latents = unet.model(latent_batch, timesteps, encoder_hidden_states=audio_feature_batch).sample
-                else:
-                    pred_latents = unet.model(latent_batch, timesteps, encoder_hidden_states=audio_feature_batch).sample
-                pred_latents = pred_latents.float().clamp(-10, 10)
+                    pred_latents = pred_latents.float().clamp(-10, 10)
+                    recon = vae.decode_latents(pred_latents)
 
-                # VAE
-                recon = vae.decode_latents(pred_latents)
-
-                # Composite each frame
-                for j in range(actual_batch):
+                # Build result frames in original order
+                batch_results = {}
+                # Speaking frames
+                for batch_j, j in enumerate(speaking_indices):
                     idx = i + j
                     m_idx = mirror_index(length, idx)
-                    pred_frame = recon[j]
+                    pred_frame = recon[batch_j]
                     ori_frame = frame_list_cycle[m_idx].copy()
 
-                    # Grey-mouth fallback
                     if pred_frame is None or not np.isfinite(pred_frame).all():
-                        output_frames.append(ori_frame)
+                        batch_results[j] = ori_frame
                         continue
                     mouth_half = pred_frame[pred_frame.shape[0] // 2:, :, :]
                     if np.std(mouth_half) < 4.0 and 90.0 <= np.mean(mouth_half) <= 165.0:
-                        output_frames.append(ori_frame)
+                        batch_results[j] = ori_frame
                         continue
 
                     bbox = coord_list_cycle[m_idx]
                     x1, y1, x2, y2 = bbox
-                    res_frame = cv2.resize(pred_frame.astype(np.uint8), (x2 - x1, y2 - y1))
+                    # Use Lanczos4 for sharper mouth upscaling
+                    res_frame = cv2.resize(pred_frame.astype(np.uint8), (x2 - x1, y2 - y1), interpolation=cv2.INTER_LANCZOS4)
                     mask = mask_list_cycle[m_idx]
                     mask_crop_box = mask_coords_list_cycle[m_idx]
                     combine_frame = get_image_blending(ori_frame, res_frame, bbox, mask, mask_crop_box)
-                    output_frames.append(combine_frame)
+                    # Light unsharp mask for crisper lips
+                    gaussian = cv2.GaussianBlur(combine_frame, (0, 0), 1.5)
+                    combine_frame = cv2.addWeighted(combine_frame, 1.3, gaussian, -0.3, 0)
+                    batch_results[j] = combine_frame
+
+                # Silent frames: use original
+                for j in silent_indices:
+                    idx = i + j
+                    m_idx = mirror_index(length, idx)
+                    batch_results[j] = frame_list_cycle[m_idx].copy()
+
+                # Append in order
+                for j in range(actual_batch):
+                    output_frames.append(batch_results[j])
 
                 if (i // batch_size + 1) % 10 == 0:
                     logger.info(f'[RenderVideo] {len(output_frames)}/{num_video_frames} frames done...')
