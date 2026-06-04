@@ -46,6 +46,12 @@ import torch
 from typing import Dict
 from logger import logger
 import gc
+import time
+import cv2
+import librosa
+import subprocess
+import os
+import io
 
 if torch.cuda.is_available():
     _gpu_name = torch.cuda.get_device_name(0)
@@ -58,8 +64,8 @@ app = Flask(__name__)
 #sockets = Sockets(app)
 nerfreals:Dict[int, BaseReal] = {} #sessionid:BaseReal
 opt = None
-model = None
-avatar = None
+model = None  # loaded model tuple (vae, unet, pe, timesteps, audio_processor, use_autocast)
+avatar = None  # loaded avatar tuple
         
 
 #####webrtc###############################
@@ -307,6 +313,181 @@ async def tts_preview(request):
         logger.exception('tts_preview error:')
         return web.Response(status=500, text=str(e))
 
+async def render_video(request):
+    """Generate a full MP4 video from text (TTS + offline MuseTalk inference)."""
+    try:
+        params = await request.json()
+        text = params.get('text', '').strip()
+        voice = params.get('voice', opt.REF_FILE if opt else 'en-US-JennyNeural')
+        sessionid = params.get('sessionid', 0)
+        if not text:
+            return web.Response(status=400, text='no text')
+
+        global model, avatar
+        if model is None or avatar is None:
+            return web.Response(status=503, text='model not loaded yet')
+
+        vae, unet, pe, timesteps, audio_processor, use_autocast = model
+        frame_list_cycle, mask_list_cycle, coord_list_cycle, mask_coords_list_cycle, input_latent_list_cycle = avatar
+        device = unet.device
+        length = len(input_latent_list_cycle)
+        fps = opt.fps if opt else 25
+        batch_size = opt.batch_size if opt else 4
+
+        # Ensure videos directory exists
+        videos_dir = os.path.join('data', 'videos')
+        os.makedirs(videos_dir, exist_ok=True)
+        ts = int(time.time())
+        out_name = f"session{sessionid}_{ts}.mp4"
+        out_path = os.path.join(videos_dir, out_name)
+        temp_audio = os.path.join(videos_dir, f"_temp_audio_{ts}.wav")
+
+        logger.info(f'[RenderVideo] Starting render for: "{text}"')
+
+        # 1. Generate TTS audio
+        t0 = time.perf_counter()
+        import edge_tts
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(temp_audio)
+        logger.info(f'[RenderVideo] TTS generated in {(time.perf_counter()-t0):.2f}s')
+
+        # 2. Load audio
+        wav, _ = librosa.load(temp_audio, sr=16000)
+        audio_duration = len(wav) / 16000.0
+        num_video_frames = int(audio_duration * fps)
+        logger.info(f'[RenderVideo] Audio: {audio_duration:.2f}s -> {num_video_frames} frames')
+
+        # 3. Extract Whisper features
+        t0 = time.perf_counter()
+        whisper_features = audio_processor.audio2feat(wav)
+        logger.info(f'[RenderVideo] Whisper features in {(time.perf_counter()-t0):.2f}s')
+
+        # 4. Pre-load latents to GPU
+        input_latent_list_cycle = [l.to(device=device, dtype=unet.model.dtype) for l in input_latent_list_cycle]
+
+        # 5. Batch inference + compositing
+        output_frames = []
+        from musetalk.utils.blending import get_image_blending
+
+        def mirror_index(length, index):
+            turn = index // length
+            res = index % length
+            if turn % 2 == 0:
+                return res
+            return length - res - 1
+
+        with torch.no_grad():
+            for i in range(0, num_video_frames, batch_size):
+                batch_end = min(i + batch_size, num_video_frames)
+                actual_batch = batch_end - i
+
+                latent_batch = []
+                whisper_batch = []
+                for j in range(actual_batch):
+                    idx = i + j
+                    m_idx = mirror_index(length, idx)
+                    latent_batch.append(input_latent_list_cycle[m_idx])
+                    feat, _ = audio_processor.get_sliced_feature(
+                        feature_array=whisper_features,
+                        vid_idx=idx,
+                        audio_feat_length=[2, 2],
+                        fps=fps,
+                    )
+                    whisper_batch.append(feat)
+
+                latent_batch = torch.cat(latent_batch, dim=0)
+                whisper_batch = np.stack(whisper_batch, axis=0)
+                audio_feature_batch = torch.from_numpy(whisper_batch).to(device=device, dtype=unet.model.dtype)
+                audio_feature_batch = pe(audio_feature_batch)
+
+                # UNet
+                if use_autocast:
+                    with torch.autocast(device_type=device.type, enabled=True):
+                        pred_latents = unet.model(latent_batch, timesteps, encoder_hidden_states=audio_feature_batch).sample
+                else:
+                    pred_latents = unet.model(latent_batch, timesteps, encoder_hidden_states=audio_feature_batch).sample
+                pred_latents = pred_latents.float().clamp(-10, 10)
+
+                # VAE
+                recon = vae.decode_latents(pred_latents)
+
+                # Composite each frame
+                for j in range(actual_batch):
+                    idx = i + j
+                    m_idx = mirror_index(length, idx)
+                    pred_frame = recon[j]
+                    ori_frame = frame_list_cycle[m_idx].copy()
+
+                    # Grey-mouth fallback
+                    if pred_frame is None or not np.isfinite(pred_frame).all():
+                        output_frames.append(ori_frame)
+                        continue
+                    mouth_half = pred_frame[pred_frame.shape[0] // 2:, :, :]
+                    if np.std(mouth_half) < 4.0 and 90.0 <= np.mean(mouth_half) <= 165.0:
+                        output_frames.append(ori_frame)
+                        continue
+
+                    bbox = coord_list_cycle[m_idx]
+                    x1, y1, x2, y2 = bbox
+                    res_frame = cv2.resize(pred_frame.astype(np.uint8), (x2 - x1, y2 - y1))
+                    mask = mask_list_cycle[m_idx]
+                    mask_crop_box = mask_coords_list_cycle[m_idx]
+                    combine_frame = get_image_blending(ori_frame, res_frame, bbox, mask, mask_crop_box)
+                    output_frames.append(combine_frame)
+
+                if (i // batch_size + 1) % 10 == 0:
+                    logger.info(f'[RenderVideo] {len(output_frames)}/{num_video_frames} frames done...')
+
+        logger.info(f'[RenderVideo] Inference complete. {len(output_frames)} frames generated.')
+
+        # 6. Write video with ffmpeg
+        if output_frames:
+            h, w = output_frames[0].shape[:2]
+            temp_video = out_path.replace('.mp4', '_temp.mp4')
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            writer = cv2.VideoWriter(temp_video, fourcc, fps, (w, h))
+            for frame in output_frames:
+                writer.write(frame)
+            writer.release()
+
+            # Mux with audio
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', temp_video,
+                '-i', temp_audio,
+                '-c:v', 'libx264', '-preset', 'fast',
+                '-c:a', 'aac', '-b:a', '128k',
+                '-shortest',
+                '-movflags', '+faststart',
+                out_path,
+            ]
+            try:
+                subprocess.run(cmd, check=True, capture_output=True)
+                os.remove(temp_video)
+                logger.info(f'[RenderVideo] Saved: {out_path}')
+            except Exception as e:
+                logger.warning(f'[RenderVideo] ffmpeg mux failed ({e}), keeping silent video')
+                if os.path.exists(temp_video):
+                    os.rename(temp_video, out_path)
+        else:
+            out_path = None
+
+        # Cleanup temp audio
+        if os.path.exists(temp_audio):
+            os.remove(temp_audio)
+
+        return web.Response(
+            content_type='application/json',
+            text=json.dumps({
+                'code': 0,
+                'video_url': f'/videos/{out_name}' if out_path else None,
+                'frames': len(output_frames),
+            })
+        )
+    except Exception as e:
+        logger.exception('[RenderVideo] error:')
+        return web.Response(status=500, text=str(e))
+
 async def on_shutdown(app):
     # close peer connections
     coros = [pc.close() for pc in pcs]
@@ -397,7 +578,7 @@ if __name__ == '__main__':
         from musereal import MuseReal,load_model,load_avatar,warm_up
         logger.info(opt)
         model = load_model()
-        avatar = load_avatar(opt.avatar_id) 
+        avatar = load_avatar(opt.avatar_id)
         warm_up(opt.batch_size,model)
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -439,6 +620,8 @@ if __name__ == '__main__':
     appasync.router.add_post("/interrupt_talk", interrupt_talk)
     appasync.router.add_post("/is_speaking", is_speaking)
     appasync.router.add_post("/tts_preview", tts_preview)
+    appasync.router.add_post("/render_video", render_video)
+    appasync.router.add_static('/videos', path=os.path.join('data', 'videos'))
     appasync.router.add_static('/',path='web')
 
     # Configure default CORS settings.

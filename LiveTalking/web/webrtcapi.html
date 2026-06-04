@@ -230,6 +230,7 @@
         </div>
         <audio id="audio" autoplay="true"></audio>
         <video id="video" autoplay="true" playsinline="true" style="display:none;"></video>
+        <video id="prerender-video" controls playsinline="true" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:12px;"></video>
     </div>
 
     <div class="controls">
@@ -238,6 +239,8 @@
         <div class="option-row" style="margin-left:auto;gap:12px;">
             <input id="mode-toggle" type="checkbox" checked/>
             <label for="mode-toggle" title="Test Mode = avatar echoes what you type (no backend needed)">Test Mode</label>
+            <input id="prerender-toggle" type="checkbox"/>
+            <label for="prerender-toggle" title="Pre-render = generates full MP4 first, then plays it (no real-time lag)">Pre-render</label>
             <input id="use-stun" type="checkbox"/>
             <label for="use-stun">STUN server</label>
         </div>
@@ -275,14 +278,17 @@ $(document).ready(function() {
 
     function updateModeUI() {
         var isTest = $('#mode-toggle').is(':checked');
+        var isPrerender = $('#prerender-toggle').is(':checked');
+        var modeLabel = isPrerender ? ' (Pre-render MP4)' : '';
         if (isTest) {
-            $('#chat-heading').text('Test Mode — type anything and the avatar will speak it');
+            $('#chat-heading').text('Test Mode' + modeLabel + ' — type anything and the avatar will speak it');
             $('#message').attr('placeholder', 'Type anything and the avatar will repeat it...');
         } else {
-            $('#chat-heading').text('RAG Chat — Ask a policy question');
+            $('#chat-heading').text('RAG Chat' + modeLabel + ' — Ask a policy question');
             $('#message').attr('placeholder', 'Type or click mic to speak...');
         }
     }
+    $('#prerender-toggle').on('change', updateModeUI);
     $('#mode-toggle').on('change', updateModeUI);
     updateModeUI();
 
@@ -294,44 +300,78 @@ $(document).ready(function() {
 
         var sessionid = parseInt($('#sessionid').val());
         var isTest = $('#mode-toggle').is(':checked');
+        var isPrerender = $('#prerender-toggle').is(':checked');
         var type = isTest ? 'echo' : 'chat';
-        console.log('Sending [' + type + ']:', message, 'session:', sessionid);
+        console.log('Sending [' + type + '] prerender=' + isPrerender + ':', message, 'session:', sessionid);
 
         // Show spinner & disable send
         $('#send-spinner').addClass('active');
         $('#send-btn').prop('disabled', true);
 
-        if (isTest) {
-            $('#response-box').addClass('visible').html('<em style="color:var(--text-muted)">Speaking: ' + $('<div>').text(message).html() + '</em>');
-        } else {
-            $('#response-box').addClass('visible').html('<em style="color:var(--text-muted)">Thinking...</em>');
-        }
-
-        fetch('/human', {
-            body: JSON.stringify({
-                text: message,
-                type: type,
-                interrupt: true,
-                sessionid: sessionid,
-            }),
-            headers: { 'Content-Type': 'application/json' },
-            method: 'POST'
-        }).then(function(res) {
-            if (isTest) {
-                $('#response-box').html('<span style="color:var(--success)">Avatar spoke: ' + $('<div>').text(message).html() + '</span>');
-            } else {
-                $('#response-box').html('<em style="color:var(--text-muted)">Avatar is responding...</em>');
-            }
-            setTimeout(function() {
+        if (isPrerender) {
+            // Pre-render mode: generate full MP4 then play it
+            $('#response-box').addClass('visible').html('<em style="color:var(--text-muted)">Rendering video... (this may take a while)</em>');
+            fetch('/render_video', {
+                body: JSON.stringify({
+                    text: message,
+                    sessionid: sessionid,
+                }),
+                headers: { 'Content-Type': 'application/json' },
+                method: 'POST'
+            }).then(function(res) { return res.json(); }).then(function(data) {
+                if (data.code !== 0 || !data.video_url) {
+                    $('#response-box').html('<span style="color:var(--danger)">Render failed: ' + (data.msg || 'unknown error') + '</span>');
+                    return;
+                }
+                // Hide WebRTC, show pre-rendered video
+                $('#video').hide();
+                $('#placeholder').hide();
+                var prerenderVid = $('#prerender-video');
+                prerenderVid.attr('src', data.video_url);
+                prerenderVid.show();
+                prerenderVid[0].play();
+                $('#response-box').html('<span style="color:var(--success)">Playing rendered video (' + data.frames + ' frames)</span>');
+            }).catch(function(err) {
+                console.error('Render error:', err);
+                $('#response-box').html('<span style="color:var(--danger)">Render failed. Check server logs.</span>');
+            }).finally(function() {
                 $('#send-spinner').removeClass('active');
                 $('#send-btn').prop('disabled', false);
-            }, 2000);
-        }).catch(function(err) {
-            console.error('Error:', err);
-            $('#response-box').html('<span style="color:var(--danger)">Failed to send. Is the connection active?</span>');
-            $('#send-spinner').removeClass('active');
-            $('#send-btn').prop('disabled', false);
-        });
+            });
+        } else {
+            // Real-time mode (existing behavior)
+            if (isTest) {
+                $('#response-box').addClass('visible').html('<em style="color:var(--text-muted)">Speaking: ' + $('<div>').text(message).html() + '</em>');
+            } else {
+                $('#response-box').addClass('visible').html('<em style="color:var(--text-muted)">Thinking...</em>');
+            }
+
+            fetch('/human', {
+                body: JSON.stringify({
+                    text: message,
+                    type: type,
+                    interrupt: true,
+                    sessionid: sessionid,
+                }),
+                headers: { 'Content-Type': 'application/json' },
+                method: 'POST'
+            }).then(function(res) {
+                if (isTest) {
+                    $('#response-box').html('<span style="color:var(--success)">Avatar spoke: ' + $('<div>').text(message).html() + '</span>');
+                } else {
+                    $('#response-box').html('<em style="color:var(--text-muted)">Avatar is responding...</em>');
+                }
+                setTimeout(function() {
+                    $('#send-spinner').removeClass('active');
+                    $('#send-btn').prop('disabled', false);
+                }, 2000);
+            }).catch(function(err) {
+                console.error('Error:', err);
+                $('#response-box').html('<span style="color:var(--danger)">Failed to send. Is the connection active?</span>');
+                $('#send-spinner').removeClass('active');
+                $('#send-btn').prop('disabled', false);
+            });
+        }
 
         $('#message').val('').focus();
     });
