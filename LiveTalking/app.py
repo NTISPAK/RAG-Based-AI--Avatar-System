@@ -492,12 +492,16 @@ async def render_video(request):
 
         logger.info(f'[RenderVideo] Inference complete. {len(output_frames)} frames generated.')
 
-        # 5b. Cooldown tail: append original frames so mouth settles to idle (~0.8s)
+        # 5b. Cooldown tail: smooth cross-fade from last speaking frame to idle (~0.8s)
         cooldown_frames = int(0.8 * fps)
+        last_frame = output_frames[-1].astype(np.float32)
         for k in range(cooldown_frames):
             m_idx = mirror_index(length, num_video_frames + k)
-            output_frames.append(frame_list_cycle[m_idx].copy())
-        logger.info(f'[RenderVideo] Appended {cooldown_frames} cooldown frames. Total: {len(output_frames)}')
+            idle_frame = frame_list_cycle[m_idx].astype(np.float32)
+            alpha = k / max(1, cooldown_frames - 1)  # 0.0 → 1.0
+            blend = (1 - alpha) * last_frame + alpha * idle_frame
+            output_frames.append(blend.astype(np.uint8))
+        logger.info(f'[RenderVideo] Cross-faded {cooldown_frames} cooldown frames. Total: {len(output_frames)}')
 
         # 6. Write video with ffmpeg
         if output_frames:
