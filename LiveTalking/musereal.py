@@ -49,15 +49,17 @@ def load_model():
     vae, unet, pe = load_all_model()
     device = torch.device("cuda" if torch.cuda.is_available() else ("mps" if (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()) else "cpu"))
     timesteps = torch.tensor([0], device=device)
-    # Only use FP16 on GPUs with Tensor Cores (RTX 20/30/40, A100, H100, etc.)
-    # GTX 1660 and other non-RTX cards lack Tensor Cores and produce NaN in FP16
+    # Only use FP16/autocast on GPUs with Tensor Cores (RTX 20/30/40, A100, H100, etc.)
+    # GTX 1660 and other non-RTX cards lack Tensor Cores; FP16 autocast causes NaN
     if device.type == "cuda":
         gpu_name = torch.cuda.get_device_name().lower()
         has_tensor_cores = any(x in gpu_name for x in ['rtx', 'a100', 'h100', 'titan rtx'])
         model_dtype = torch.float16 if has_tensor_cores else torch.float32
+        use_autocast = has_tensor_cores
     else:
         model_dtype = torch.float32
-    logger.info(f'[MuseTalk] UNet/PE dtype={model_dtype}, VAE dtype=float32 on {device} ({torch.cuda.get_device_name() if device.type=="cuda" else "cpu"})')
+        use_autocast = False
+    logger.info(f'[MuseTalk] UNet/PE dtype={model_dtype}, VAE dtype=float32, autocast={use_autocast} on {device} ({torch.cuda.get_device_name() if device.type=="cuda" else "cpu"})')
     pe = pe.to(device=device, dtype=model_dtype)
     vae.vae = vae.vae.float().to(device)
     unet.model = unet.model.to(device=device, dtype=model_dtype)
@@ -73,7 +75,7 @@ def load_model():
             logger.warning(f'[MuseTalk] torch.compile failed, using eager mode: {e}')
     # Initialize audio processor and Whisper model
     audio_processor = Audio2Feature(model_path="./models/whisper")
-    return vae, unet, pe, timesteps, audio_processor
+    return vae, unet, pe, timesteps, audio_processor, use_autocast
 
 def load_avatar(avatar_id):
     #self.video_path = '' #video_path
@@ -109,7 +111,7 @@ def load_avatar(avatar_id):
 def warm_up(batch_size,model):
     # 预热函数
     logger.info('warmup model...')
-    vae, unet, pe, timesteps, audio_processor = model
+    vae, unet, pe, timesteps, audio_processor, use_autocast = model
     #batch_size = 16
     #timesteps = torch.tensor([0], device=unet.device)
     whisper_batch = np.ones((batch_size, 50, 384), dtype=np.uint8)
@@ -119,9 +121,15 @@ def warm_up(batch_size,model):
     audio_feature_batch = audio_feature_batch.to(device=unet.device, dtype=unet.model.dtype)
     audio_feature_batch = pe(audio_feature_batch)
     latent_batch = latent_batch.to(dtype=unet.model.dtype)
-    pred_latents = unet.model(latent_batch,
-                              timesteps,
-                              encoder_hidden_states=audio_feature_batch).sample
+    if use_autocast:
+        with torch.autocast(device_type=unet.device.type, enabled=True):
+            pred_latents = unet.model(latent_batch,
+                                      timesteps,
+                                      encoder_hidden_states=audio_feature_batch).sample
+    else:
+        pred_latents = unet.model(latent_batch,
+                                  timesteps,
+                                  encoder_hidden_states=audio_feature_batch).sample
     vae.decode_latents(pred_latents)
 
 def read_imgs(img_list):
@@ -143,7 +151,7 @@ def __mirror_index(size, index):
 
 @torch.no_grad()
 def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,audio_out_queue,res_frame_queue,
-              vae, unet, pe,timesteps): #vae, unet, pe,timesteps
+              vae, unet, pe,timesteps,use_autocast): #vae, unet, pe,timesteps
     
     # vae, unet, pe = load_diffusion_model()
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -208,7 +216,12 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
             t_prep = time.perf_counter() - t
 
             t=time.perf_counter()
-            with torch.autocast(device_type=unet.device.type, enabled=(unet.device.type == 'cuda')):
+            if use_autocast:
+                with torch.autocast(device_type=unet.device.type, enabled=True):
+                    pred_latents = unet.model(latent_batch,
+                                                timesteps,
+                                                encoder_hidden_states=audio_feature_batch).sample
+            else:
                 pred_latents = unet.model(latent_batch,
                                             timesteps,
                                             encoder_hidden_states=audio_feature_batch).sample
@@ -250,7 +263,7 @@ class MuseReal(BaseReal):
         self.idx = 0
         self.res_frame_queue = mp.Queue(self.batch_size*4)
 
-        self.vae, self.unet, self.pe, self.timesteps, self.audio_processor = model
+        self.vae, self.unet, self.pe, self.timesteps, self.audio_processor, self.use_autocast = model
         self.frame_list_cycle,self.mask_list_cycle,self.coord_list_cycle,self.mask_coords_list_cycle, self.input_latent_list_cycle = avatar
         #self.__loadavatar()
 
@@ -333,7 +346,7 @@ class MuseReal(BaseReal):
         infer_quit_event = Event()
         infer_thread = Thread(target=inference, args=(infer_quit_event,self.batch_size,self.input_latent_list_cycle,
                                            self.asr.feat_queue,self.asr.output_queue,self.res_frame_queue,
-                                           self.vae, self.unet, self.pe,self.timesteps))
+                                           self.vae, self.unet, self.pe,self.timesteps,self.use_autocast))
         infer_thread.start()
 
         asr_quit_event = Event()
