@@ -58,8 +58,11 @@ def load_model():
     unet.device = device  # ensure unet.device matches where model weights actually are
     if device.type == "cuda" and hasattr(torch, 'compile'):
         try:
+            import triton  # inductor backend requires triton (Linux only)
             unet.model = torch.compile(unet.model, mode='reduce-overhead')
             logger.info('[MuseTalk] UNet compiled with torch.compile (reduce-overhead)')
+        except ImportError:
+            logger.info('[MuseTalk] triton not available (Windows), skipping torch.compile')
         except Exception as e:
             logger.warning(f'[MuseTalk] torch.compile failed, using eager mode: {e}')
     # Initialize audio processor and Whisper model
