@@ -470,6 +470,7 @@ async def render_video(request):
                 logger.info(f'[RenderVideo] Saved: {out_path}')
             except Exception as e:
                 logger.warning(f'[RenderVideo] ffmpeg mux failed ({e}), keeping silent video')
+                logger.info('[RenderVideo] To install ffmpeg on Windows: https://ffmpeg.org/download.html or choco install ffmpeg')
                 if os.path.exists(temp_video):
                     os.rename(temp_video, out_path)
         else:
