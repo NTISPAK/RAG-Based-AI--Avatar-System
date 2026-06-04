@@ -140,6 +140,9 @@ def inference(quit_event,batch_size,input_latent_list_cycle,audio_feat_queue,aud
     # unet.model = unet.model.half()
     
     length = len(input_latent_list_cycle)
+    # Pre-move all latents to GPU once — avoids repeated CPU→GPU transfer in the hot loop
+    input_latent_list_cycle = [l.to(device=unet.device, dtype=unet.model.dtype) for l in input_latent_list_cycle]
+    logger.info(f'[MuseTalk] {length} latents pre-loaded to {unet.device}')
     index = 0
     count=0
     counttime=0
