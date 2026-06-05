@@ -63,8 +63,8 @@ def main():
     musetalk_dir = os.path.join(MODELS_DIR, "musetalkV15")
     ensure_dir(musetalk_dir)
     # Try downloading specific files from HF
-    download_hf_file("TMElyralab/MuseTalk", "musetalk/unet.pth", musetalk_dir, "unet.pth (3.2 GB)")
-    download_hf_file("TMElyralab/MuseTalk", "musetalk/musetalk.json", musetalk_dir, "musetalk.json")
+    download_hf_file("TMElyralab/MuseTalk", "musetalkV15/unet.pth", musetalk_dir, "unet.pth (3.2 GB)")
+    download_hf_file("TMElyralab/MuseTalk", "musetalkV15/musetalk.json", musetalk_dir, "musetalk.json")
 
     # 2. SD-VAE
     print("\n[2/5] Stable Diffusion VAE-FT-MSE (319 MB)")

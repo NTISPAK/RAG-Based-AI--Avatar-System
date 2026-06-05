@@ -84,8 +84,8 @@ def main():
     # --- 1. MuseTalk UNet weights ---
     print("\n[1/5] MuseTalk V1.5 UNet (3.2 GB)")
     musetalk_dir = os.path.join(MODELS_DIR, "musetalkV15")
-    download_hf_file("TMElyralab/MuseTalk", "musetalk/unet.pth", musetalk_dir)
-    download_hf_file("TMElyralab/MuseTalk", "musetalk/musetalk.json", musetalk_dir)
+    download_hf_file("TMElyralab/MuseTalk", "musetalkV15/unet.pth", musetalk_dir)
+    download_hf_file("TMElyralab/MuseTalk", "musetalkV15/musetalk.json", musetalk_dir)
 
     # --- 2. SD-VAE ---
     print("\n[2/5] Stable Diffusion VAE-FT-MSE (~330 MB)")

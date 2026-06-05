@@ -67,7 +67,7 @@ def main():
     musetalk_dir = os.path.join(MODELS_DIR, "musetalkV15")
     os.makedirs(musetalk_dir, exist_ok=True)
     try:
-        download_hf_file("TMElyralab/MuseTalk", "musetalk/unet.pth", musetalk_dir)
+        download_hf_file("TMElyralab/MuseTalk", "musetalkV15/unet.pth", musetalk_dir)
     except Exception as e:
         print(f"[ERROR] Failed to download unet.pth: {e}")
     
