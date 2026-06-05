@@ -59,18 +59,23 @@ def load_model():
     else:
         model_dtype = torch.float32
         use_autocast = False
-    logger.info(f'[MuseTalk] UNet/PE dtype={model_dtype}, VAE dtype=float32, autocast={use_autocast} on {device} ({torch.cuda.get_device_name() if device.type=="cuda" else "cpu"})')
+    if device.type == "cuda":
+        vram_gb = torch.cuda.get_device_properties(device).total_memory / 1024**3
+        logger.info(f'[MuseTalk] GPU: {torch.cuda.get_device_name(device)} | VRAM: {vram_gb:.1f}GB | dtype={model_dtype} | autocast={use_autocast}')
+        if vram_gb >= 12:
+            logger.info(f'[MuseTalk] High-VRAM GPU detected. Recommended batch_size: 8-12 for real-time, 16 for offline')
+    else:
+        logger.info(f'[MuseTalk] UNet/PE dtype={model_dtype}, VAE dtype=float32, autocast={use_autocast} on {device}')
     pe = pe.to(device=device, dtype=model_dtype)
     vae.vae = vae.vae.float().to(device)
     unet.model = unet.model.to(device=device, dtype=model_dtype)
     unet.device = device  # ensure unet.device matches where model weights actually are
     if device.type == "cuda" and hasattr(torch, 'compile'):
         try:
-            import triton  # inductor backend requires triton (Linux only)
-            unet.model = torch.compile(unet.model, mode='reduce-overhead')
+            # PyTorch 2.2+ supports torch.compile on Windows without triton
+            # via inductor/cudagraphs fallback. Just try it.
+            unet.model = torch.compile(unet.model, mode='reduce-overhead', fullgraph=False)
             logger.info('[MuseTalk] UNet compiled with torch.compile (reduce-overhead)')
-        except ImportError:
-            logger.info('[MuseTalk] triton not available (Windows), skipping torch.compile')
         except Exception as e:
             logger.warning(f'[MuseTalk] torch.compile failed, using eager mode: {e}')
     # Initialize audio processor and Whisper model

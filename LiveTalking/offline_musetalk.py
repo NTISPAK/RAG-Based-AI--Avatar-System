@@ -220,7 +220,7 @@ def main():
     parser.add_argument("--text", default=None, help="Text to synthesize via TTS (alternative to --audio)")
     parser.add_argument("--voice", default="en-IN-NeerjaNeural", help="Edge-TTS voice for --text")
     parser.add_argument("--output", default="output.mp4", help="Output video path")
-    parser.add_argument("--batch_size", type=int, default=4, help="Inference batch size")
+    parser.add_argument("--batch_size", type=int, default=8, help="Inference batch size")
     parser.add_argument("--fps", type=int, default=25, help="Output video FPS")
     args = parser.parse_args()
 

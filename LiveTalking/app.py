@@ -54,9 +54,17 @@ import io
 
 if torch.cuda.is_available():
     _gpu_name = torch.cuda.get_device_name(0)
-    _has_tensor_cores = torch.cuda.get_device_capability()[0] >= 7 and "16" not in _gpu_name
+    _cap = torch.cuda.get_device_capability()
+    # Tensor Cores: compute capability >= 7.0 for Volta, but FP16 safe from 7.5+ (Turing/Ampere/Ada/Blackwell)
+    # Exclude known non-RTX cards that report high compute capability
+    _non_rtx = any(x in _gpu_name.lower() for x in ['gtx 16', 'tesla t4', 'quadro'])
+    _has_tensor_cores = (_cap[0] > 7 or (_cap[0] == 7 and _cap[1] >= 5)) and not _non_rtx
     torch.backends.cudnn.benchmark = _has_tensor_cores
-    logger.info(f'[CUDA] cudnn.benchmark={_has_tensor_cores} on {_gpu_name}')
+    # TF32 acceleration for Ampere/Blackwell (compute cap >= 8.0)
+    _is_ampere_or_newer = _cap[0] >= 8
+    torch.backends.cuda.matmul.allow_tf32 = _is_ampere_or_newer
+    torch.backends.cudnn.allow_tf32 = _is_ampere_or_newer
+    logger.info(f'[CUDA] cudnn.benchmark={_has_tensor_cores}, tf32={_is_ampere_or_newer} on {_gpu_name} (cap={_cap})')
 
 
 app = Flask(__name__)
