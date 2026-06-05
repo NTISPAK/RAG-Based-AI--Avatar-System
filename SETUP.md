@@ -23,7 +23,11 @@ RAG-Based-AI--Avatar-System/
 ├── docs/
 │   └── HOW_TO_RUN.md          # Quick run guide
 ├── scripts/
+│   ├── download_models.py     # Download AI model weights
+│   ├── download_wav2lip.py  # Download Wav2Lip checkpoint
+│   ├── generate_avatar.py     # Generate avatar from video
 │   └── restructure.py         # One-time restructure automation
+├── custom-videos/             # Committed source videos for avatar generation
 ├── .env.example               # Environment template
 └── README.md
 ```
@@ -63,14 +67,31 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 pip install -r requirements.txt
 ```
 
-### 4. Ingest Documents
+### 4. Download AI Models
+
+```bash
+python scripts/download_models.py
+```
+
+**Manual steps still needed:**
+- **Wav2Lip checkpoint** — Download with the script:
+  ```bash
+  python scripts/download_wav2lip.py
+  ```
+  (If automatic download fails, it prints manual instructions.)
+- **Avatar data** — Copy `backend/data/avatars/` from your existing PC, or regenerate:
+  ```bash
+  python scripts/generate_avatar.py --video custom-videos/indian-female.mp4 --avatar_id indian_female
+  ```
+
+### 5. Ingest Documents
 
 ```bash
 cd rag
 python ingest.py
 ```
 
-### 5. Run (2 Terminals)
+### 6. Run (2 Terminals)
 
 **Terminal 1 — RAG Backend:**
 ```bash
@@ -81,7 +102,7 @@ python -m uvicorn main:app --reload --port 8000
 **Terminal 2 — Avatar Server:**
 ```bash
 cd backend
-python app.py --model musetalk --avatar_id musetalk_avatar1 --batch_size 8 --tts edgetts --REF_FILE en-IN-NeerjaNeural --transport webrtc
+python app.py --model musetalk --avatar_id indian_female --batch_size 8 --tts edgetts --REF_FILE en-IN-NeerjaNeural --transport webrtc
 ```
 
 Open: http://localhost:8010/webrtcapi.html

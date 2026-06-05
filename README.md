@@ -23,7 +23,7 @@ A Retrieval-Augmented Generation (RAG) system integrated with a real-time lip-sy
 - Python 3.11+
 - Docker (for Qdrant)
 - Google Gemini API key ([Get one here](https://aistudio.google.com/app/apikey))
-- Model files downloaded (see [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md))
+- Model files downloaded via `python scripts/download_models.py` (see [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md))
 
 ### Run (2 Terminals)
 
@@ -36,7 +36,7 @@ python -m uvicorn main:app --reload --port 8000
 **Terminal 2 – Avatar Server (port 8010):**
 ```bash
 cd backend
-python app.py --model musetalk --avatar_id musetalk_avatar1 --batch_size 8 --tts edgetts --REF_FILE en-IN-NeerjaNeural --transport webrtc
+python app.py --model musetalk --avatar_id indian_female --batch_size 8 --tts edgetts --REF_FILE en-IN-NeerjaNeural --transport webrtc
 ```
 
 **Open:** http://localhost:8010/webrtcapi.html

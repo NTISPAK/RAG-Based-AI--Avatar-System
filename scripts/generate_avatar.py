@@ -84,9 +84,12 @@ def main():
         print(f"\n[WARNING] Output directory already exists: {out_dir}")
         print("  Existing files will be overwritten.")
 
+    # Resolve video path BEFORE changing directory
+    video_abs = os.path.abspath(args.video)
+
     # 3. Change to backend dir so relative paths in generator work
     print(f"\n[Generating] Avatar: {args.avatar_id}")
-    print(f"  From: {args.video}")
+    print(f"  From: {video_abs}")
     print(f"  To:   {out_dir}")
     print("  This may take a few minutes...\n")
 
@@ -103,7 +106,7 @@ def main():
     original_argv = sys.argv
     sys.argv = [
         GENERATOR,
-        "--file", args.video,
+        "--file", video_abs,
         "--avatar_id", args.avatar_id,
         "--bbox_shift", str(args.bbox_shift),
         "--version", args.version,
