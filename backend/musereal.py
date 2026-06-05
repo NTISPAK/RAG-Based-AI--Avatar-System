@@ -16,6 +16,7 @@
 ###############################################################################
 
 import math
+import platform
 import torch
 import numpy as np
 import subprocess
@@ -70,14 +71,14 @@ def load_model():
     vae.vae = vae.vae.float().to(device)
     unet.model = unet.model.to(device=device, dtype=model_dtype)
     unet.device = device  # ensure unet.device matches where model weights actually are
-    if device.type == "cuda" and hasattr(torch, 'compile'):
+    if device.type == "cuda" and hasattr(torch, 'compile') and platform.system() != "Windows":
         try:
-            # PyTorch 2.2+ supports torch.compile on Windows without triton
-            # via inductor/cudagraphs fallback. Just try it.
             unet.model = torch.compile(unet.model, mode='reduce-overhead', fullgraph=False)
             logger.info('[MuseTalk] UNet compiled with torch.compile (reduce-overhead)')
         except Exception as e:
             logger.warning(f'[MuseTalk] torch.compile failed, using eager mode: {e}')
+    else:
+        logger.info('[MuseTalk] Running in eager mode (torch.compile skipped on Windows or non-CUDA device)')
     # Initialize audio processor and Whisper model
     audio_processor = Audio2Feature(model_path="./models/whisper")
     return vae, unet, pe, timesteps, audio_processor, use_autocast
