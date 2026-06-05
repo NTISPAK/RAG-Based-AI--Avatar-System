@@ -46,12 +46,18 @@ def download_hf(repo_id, local_dir, allow_patterns=None, ignore_patterns=None):
 
 
 def download_hf_file(repo_id, filename, local_dir):
-    """Download a single file from HuggingFace hub."""
+    """Download a single file from HuggingFace hub.
+
+    Note: hf_hub_download with local_dir places the file at local_dir/filename
+    (preserving any subfolders in filename). We pass MODELS_DIR as local_dir
+    and use filename to encode the subfolder path in the repo.
+    """
     from huggingface_hub import hf_hub_download
     ensure_dir(local_dir)
-    dest = os.path.join(local_dir, os.path.basename(filename))
-    if os.path.exists(dest) and os.path.getsize(dest) > 1000:
-        print(f"  [SKIP] Already exists: {dest}")
+    # hf_hub_download places at local_dir/filename, not local_dir/basename
+    actual_dest = os.path.join(local_dir, filename)
+    if os.path.exists(actual_dest) and os.path.getsize(actual_dest) > 1000:
+        print(f"  [SKIP] Already exists: {actual_dest}")
         return
     print(f"  [DOWNLOAD] {repo_id}/{filename}")
     downloaded = hf_hub_download(
@@ -84,8 +90,8 @@ def main():
     # --- 1. MuseTalk UNet weights ---
     print("\n[1/5] MuseTalk V1.5 UNet (3.2 GB)")
     musetalk_dir = os.path.join(MODELS_DIR, "musetalkV15")
-    download_hf_file("TMElyralab/MuseTalk", "musetalkV15/unet.pth", musetalk_dir)
-    download_hf_file("TMElyralab/MuseTalk", "musetalkV15/musetalk.json", musetalk_dir)
+    download_hf_file("TMElyralab/MuseTalk", "musetalkV15/unet.pth", MODELS_DIR)
+    download_hf_file("TMElyralab/MuseTalk", "musetalkV15/musetalk.json", MODELS_DIR)
 
     # --- 2. SD-VAE ---
     print("\n[2/5] Stable Diffusion VAE-FT-MSE (~330 MB)")
@@ -106,7 +112,7 @@ def main():
         print(f"  [SKIP] Already exists: {bisenet_dest}")
     else:
         import urllib.request
-        url = "https://github.com/zllrunning/face-parsing.PyTorch/releases/download/v1.0/79999_iter.pth"
+        url = "https://huggingface.co/vivym/face-parsing-bisenet/resolve/main/79999_iter.pth"
         print(f"  [DOWNLOAD] {url}")
         print(f"  [DOWNLOAD] -> {bisenet_dest}")
         tmp = bisenet_dest + ".tmp"
