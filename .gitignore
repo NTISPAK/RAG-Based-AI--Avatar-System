@@ -1,4 +1,39 @@
-LiveTalking/models/musetalkV15/unet.pth
+# Environment secrets
+.env
+
+# Python cache
 __pycache__/
 *.py[cod]
-.env
+*$py.class
+*.so
+
+# Model weights (large files)
+backend/models/**/*.pth
+backend/models/**/*.safetensors
+backend/models/**/*.bin
+
+# Generated videos
+backend/data/videos/*.mp4
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/

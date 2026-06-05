@@ -38,14 +38,12 @@ env/
 *.md
 !README.md
 
-# LiveTalking (separate container)
-LiveTalking/
-
 # Qdrant data
 qdrant_storage/
 
-# Large files that should be mounted as volumes
-documents/
+# Large files mounted as volumes
+backend/models/
+backend/data/
 
 # Docker files
 Dockerfile

@@ -1,7 +1,10 @@
 version: '3.8'
 
+# NOTE: This compose covers Qdrant + RAG backend only.
+# The avatar server (port 8010) requires GPU, ffmpeg, and large model files.
+# Run it natively: cd backend && python app.py ...
+
 services:
-  # Qdrant Vector Database
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant
@@ -21,7 +24,6 @@ services:
     networks:
       - ai-avatar-network
 
-  # RAG Backend
   rag-backend:
     build:
       context: .
@@ -31,13 +33,13 @@ services:
       - "8000:8000"
     environment:
       - QDRANT_URL=http://qdrant:6333
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - COLLECTION_NAME=${COLLECTION_NAME:-policy_docs}
       - ENABLE_TRANSLATION=${ENABLE_TRANSLATION:-true}
       - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-en}
       - SUPPORTED_LANGUAGES=${SUPPORTED_LANGUAGES:-en,ur}
     volumes:
-      - ./documents:/app/documents
+      - ./backend/rag/documents:/app/rag/documents:ro
     depends_on:
       qdrant:
         condition: service_healthy
@@ -50,38 +52,6 @@ services:
     networks:
       - ai-avatar-network
     restart: unless-stopped
-
-  # LiveTalking Frontend
-  livetalking:
-    build:
-      context: ./LiveTalking
-      dockerfile: Dockerfile.new
-    container_name: livetalking
-    ports:
-      - "8010:8010"
-    environment:
-      - RAG_BACKEND_URL=http://rag-backend:8000
-      - BATCH_SIZE=2
-      - AVATAR_ID=wav2lip256_avatar1
-      - REF_FILE=en-US-JennyNeural
-      - CHAT_LANGUAGE=${CHAT_LANGUAGE:-en}
-    volumes:
-      - ./LiveTalking/models:/app/models
-      - ./LiveTalking/data:/app/data
-    depends_on:
-      rag-backend:
-        condition: service_healthy
-    networks:
-      - ai-avatar-network
-    restart: unless-stopped
-    # Uncomment below for GPU support (NVIDIA)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
 
 volumes:
   qdrant_storage:
