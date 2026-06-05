@@ -1,0 +1,32 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Model weights & generated data (keep structure, ignore large files)
+models/*.pth
+models/*.pt
+models/*.bin
+models/*.safetensors
+data/videos/*.mp4
+data/videos/*.wav
+data/videos/*_temp.mp4
+data/avatars/*/full_imgs/*.png
+data/avatars/*/full_imgs/*.jpg
+data/avatars/*/mask/*.png
+data/avatars/*/mask/*.jpg
+
+# Logs
+*.log
+livetalking.log
+
+# Temp files
+*.tmp
+temp_*.wav
+temp_*.mp4

@@ -1,0 +1,72 @@
+# ============================================
+# Backend Requirements
+# Avatar Engine (MuseTalk, Wav2Lip, Ultralight) + WebRTC + TTS + RAG
+# Python 3.10+ recommended
+# Install: pip install -r requirements.txt
+# ============================================
+
+# ---------- Web Server ----------
+flask>=3.0.0
+flask-sockets>=0.2.1
+aiohttp>=3.9.0
+aiohttp-cors>=0.7.0
+aiortc>=1.9.0
+websockets>=12.0
+requests>=2.31.0
+
+# ---------- RAG + LLM ----------
+fastapi>=0.115.0
+uvicorn>=0.30.0
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+langchain-google-genai>=2.0.4
+langchain-qdrant>=0.2.0
+langchain-huggingface>=1.0.0
+langchain-core>=0.3.0
+qdrant-client>=1.12.0
+sentence-transformers>=3.3.0
+python-docx>=1.0.0
+
+# ---------- Audio ----------
+soundfile>=0.12.0
+scipy>=1.11.0
+librosa>=0.10.0
+edge-tts>=6.1.0
+azure-cognitiveservices-speech>=1.35.0
+
+# ---------- Video ----------
+av>=12.0.0
+opencv-python>=4.9.0
+imageio-ffmpeg>=0.4.9
+
+# ---------- PyTorch (install matching CUDA version separately) ----------
+# For CUDA 12.1: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# For CPU only:   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+torch>=2.1.0
+torchaudio>=2.1.0
+
+# ---------- ML / Diffusion ----------
+numpy>=1.26.0
+Pillow>=10.0.0
+tqdm>=4.66.0
+diffusers>=0.27.0
+transformers>=4.38.0
+accelerate>=0.27.0
+einops>=0.7.0
+
+# ---------- Face Detection & Alignment ----------
+face-alignment>=1.4.0
+scikit-image>=0.22.0
+
+# ---------- Optional / Dev ----------
+# pyaudio>=0.2.14        # Only if using --transport virtualcam
+# pyvirtualcam>=0.9.0    # Only if using --transport virtualcam
+# gevent>=24.0.0         # Only if using Flask websocket server
+# gevent-websocket>=0.10.0
+
+# ============================================
+# System dependency (install separately):
+#   macOS: brew install ffmpeg
+#   Ubuntu: sudo apt install ffmpeg
+#   Windows: choco install ffmpeg  OR download from https://ffmpeg.org/download.html
+# ============================================

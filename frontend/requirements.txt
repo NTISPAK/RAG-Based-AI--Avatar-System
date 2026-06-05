@@ -1,0 +1,10 @@
+# ============================================
+# Frontend Requirements (minimal)
+# The frontend is pure HTML + JavaScript.
+# This file only lists helpers for local static-file serving.
+# ============================================
+
+# Optional: serve frontend locally for development
+# pip install aiohttp  # if you want a simple Python server
+# OR just use: npx serve src/
+# OR: python -m http.server 8080
