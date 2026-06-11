@@ -315,6 +315,7 @@ $(document).ready(function() {
                 body: JSON.stringify({
                     text: message,
                     sessionid: sessionid,
+                    type: type,
                 }),
                 headers: { 'Content-Type': 'application/json' },
                 method: 'POST'

@@ -334,6 +334,20 @@ async def render_video(request):
         if not text:
             return web.json_response({'code': 1, 'msg': 'no text'}, status=400)
 
+        # If chat mode, fetch answer from RAG/Gemini first
+        msg_type = params.get('type', 'echo')
+        if msg_type == 'chat':
+            from llm import get_rag_answer
+            logger.info(f'[RenderVideo] Fetching RAG answer for: "{text}"')
+            answer, error = await asyncio.get_event_loop().run_in_executor(None, get_rag_answer, text)
+            if error:
+                logger.error(f'[RenderVideo] RAG error: {error}')
+                return web.json_response({'code': 1, 'msg': error}, status=503)
+            if not answer:
+                return web.json_response({'code': 1, 'msg': 'Empty RAG response'}, status=503)
+            text = answer
+            logger.info(f'[RenderVideo] RAG answer: "{text[:120]}..." ({len(text)} chars)')
+
         global model, avatar
         if model is None or avatar is None:
             return web.json_response({'code': 1, 'msg': 'model not loaded yet'}, status=503)
@@ -362,141 +376,128 @@ async def render_video(request):
         await communicate.save(temp_audio)
         logger.info(f'[RenderVideo] TTS generated in {(time.perf_counter()-t0):.2f}s')
 
-        # 2. Load audio
-        wav, _ = librosa.load(temp_audio, sr=16000)
-        audio_duration = len(wav) / 16000.0
-        num_video_frames = int(audio_duration * fps)
-        logger.info(f'[RenderVideo] Audio: {audio_duration:.2f}s -> {num_video_frames} frames')
+        # All blocking CPU/GPU work runs in a thread so the event loop
+        # stays free to handle WebRTC keep-alives (prevents ICE timeout & disconnect).
+        loop = asyncio.get_event_loop()
 
-        # 2a. Detect silence per video frame (RMS energy threshold)
-        samples_per_frame = int(16000 / fps)
-        silence_threshold = 0.015
-        is_speaking_mask = []
-        for f in range(num_video_frames):
-            start = f * samples_per_frame
-            end = start + samples_per_frame
-            seg = wav[start:end]
-            rms = np.sqrt(np.mean(seg**2)) if len(seg) > 0 else 0.0
-            is_speaking_mask.append(rms >= silence_threshold)
-        silent_count = sum(1 for x in is_speaking_mask if not x)
-        logger.info(f'[RenderVideo] Silence detection: {silent_count}/{num_video_frames} silent frames will use original mouth')
+        def _blocking_render():
+            from musetalk.utils.blending import get_image_blending
 
-        # 3. Extract Whisper features
-        t0 = time.perf_counter()
-        whisper_features = audio_processor.audio2feat(wav)
-        logger.info(f'[RenderVideo] Whisper features in {(time.perf_counter()-t0):.2f}s')
+            # 2. Load audio
+            wav, _ = librosa.load(temp_audio, sr=16000)
+            audio_duration = len(wav) / 16000.0
+            nframes = int(audio_duration * fps)
+            logger.info(f'[RenderVideo] Audio: {audio_duration:.2f}s -> {nframes} frames')
 
-        # 4. Pre-load latents to GPU
-        input_latent_list_cycle = [l.to(device=device, dtype=unet.model.dtype) for l in input_latent_list_cycle]
+            # 2a. Silence detection
+            spf = int(16000 / fps)
+            silence_threshold = 0.015
+            is_speaking_mask = []
+            for f in range(nframes):
+                seg = wav[f * spf:(f + 1) * spf]
+                rms = np.sqrt(np.mean(seg**2)) if len(seg) > 0 else 0.0
+                is_speaking_mask.append(rms >= silence_threshold)
+            logger.info(f'[RenderVideo] {sum(1 for x in is_speaking_mask if not x)}/{nframes} silent frames')
 
-        # 5. Batch inference + compositing
-        output_frames = []
-        from musetalk.utils.blending import get_image_blending
+            # 3. Whisper features
+            t0 = time.perf_counter()
+            whisper_features = audio_processor.audio2feat(wav)
+            logger.info(f'[RenderVideo] Whisper features in {(time.perf_counter()-t0):.2f}s')
 
-        def mirror_index(length, index):
-            turn = index // length
-            res = index % length
-            if turn % 2 == 0:
-                return res
-            return length - res - 1
+            # 4. Pre-load latents to GPU
+            latents_gpu = [l.to(device=device, dtype=unet.model.dtype) for l in input_latent_list_cycle]
 
-        with torch.no_grad():
-            for i in range(0, num_video_frames, batch_size):
-                batch_end = min(i + batch_size, num_video_frames)
-                actual_batch = batch_end - i
+            def mirror_index(n, idx):
+                turn = idx // n
+                res = idx % n
+                return res if turn % 2 == 0 else n - res - 1
 
-                speaking_indices = []
-                silent_indices = []
-                for j in range(actual_batch):
-                    idx = i + j
-                    if is_speaking_mask[idx]:
-                        speaking_indices.append(j)
-                    else:
-                        silent_indices.append(j)
+            # 5. Batch inference + compositing
+            output_frames = []
+            with torch.no_grad():
+                for i in range(0, nframes, batch_size):
+                    batch_end = min(i + batch_size, nframes)
+                    actual_batch = batch_end - i
 
-                if speaking_indices:
-                    latent_batch = []
-                    whisper_batch = []
-                    for j in speaking_indices:
+                    speaking_indices = [j for j in range(actual_batch) if is_speaking_mask[i + j]]
+                    silent_indices   = [j for j in range(actual_batch) if not is_speaking_mask[i + j]]
+
+                    if speaking_indices:
+                        latent_batch, whisper_batch = [], []
+                        for j in speaking_indices:
+                            idx = i + j
+                            m_idx = mirror_index(length, idx)
+                            latent_batch.append(latents_gpu[m_idx])
+                            feat, _ = audio_processor.get_sliced_feature(
+                                feature_array=whisper_features,
+                                vid_idx=idx,
+                                audio_feat_length=[2, 2],
+                                fps=fps,
+                            )
+                            whisper_batch.append(feat)
+
+                        latent_batch = torch.cat(latent_batch, dim=0)
+                        audio_feature_batch = torch.from_numpy(
+                            np.stack(whisper_batch, axis=0)
+                        ).to(device=device, dtype=unet.model.dtype)
+                        audio_feature_batch = pe(audio_feature_batch)
+
+                        if use_autocast:
+                            with torch.autocast(device_type=device.type, enabled=True):
+                                pred_latents = unet.model(latent_batch, timesteps, encoder_hidden_states=audio_feature_batch).sample
+                        else:
+                            pred_latents = unet.model(latent_batch, timesteps, encoder_hidden_states=audio_feature_batch).sample
+                        pred_latents = pred_latents.float().clamp(-10, 10)
+                        recon = vae.decode_latents(pred_latents)
+
+                    batch_results = {}
+                    for batch_j, j in enumerate(speaking_indices):
                         idx = i + j
                         m_idx = mirror_index(length, idx)
-                        latent_batch.append(input_latent_list_cycle[m_idx])
-                        feat, _ = audio_processor.get_sliced_feature(
-                            feature_array=whisper_features,
-                            vid_idx=idx,
-                            audio_feat_length=[2, 2],
-                            fps=fps,
-                        )
-                        whisper_batch.append(feat)
+                        pred_frame = recon[batch_j]
+                        ori_frame = frame_list_cycle[m_idx].copy()
+                        if pred_frame is None or not np.isfinite(pred_frame).all():
+                            batch_results[j] = ori_frame
+                            continue
+                        mouth_half = pred_frame[pred_frame.shape[0] // 2:, :, :]
+                        if np.std(mouth_half) < 4.0 and 90.0 <= np.mean(mouth_half) <= 165.0:
+                            batch_results[j] = ori_frame
+                            continue
+                        bbox = coord_list_cycle[m_idx]
+                        x1, y1, x2, y2 = bbox
+                        res_frame = cv2.resize(pred_frame.astype(np.uint8), (x2 - x1, y2 - y1), interpolation=cv2.INTER_LANCZOS4)
+                        combine_frame = get_image_blending(ori_frame, res_frame, bbox, mask_list_cycle[m_idx], mask_coords_list_cycle[m_idx])
+                        gaussian = cv2.GaussianBlur(combine_frame, (0, 0), 1.5)
+                        batch_results[j] = cv2.addWeighted(combine_frame, 1.3, gaussian, -0.3, 0)
 
-                    latent_batch = torch.cat(latent_batch, dim=0)
-                    whisper_batch = np.stack(whisper_batch, axis=0)
-                    audio_feature_batch = torch.from_numpy(whisper_batch).to(device=device, dtype=unet.model.dtype)
-                    audio_feature_batch = pe(audio_feature_batch)
+                    for j in silent_indices:
+                        batch_results[j] = frame_list_cycle[mirror_index(length, i + j)].copy()
 
-                    if use_autocast:
-                        with torch.autocast(device_type=device.type, enabled=True):
-                            pred_latents = unet.model(latent_batch, timesteps, encoder_hidden_states=audio_feature_batch).sample
-                    else:
-                        pred_latents = unet.model(latent_batch, timesteps, encoder_hidden_states=audio_feature_batch).sample
-                    pred_latents = pred_latents.float().clamp(-10, 10)
-                    recon = vae.decode_latents(pred_latents)
+                    for j in range(actual_batch):
+                        output_frames.append(batch_results[j])
 
-                batch_results = {}
-                for batch_j, j in enumerate(speaking_indices):
-                    idx = i + j
-                    m_idx = mirror_index(length, idx)
-                    pred_frame = recon[batch_j]
-                    ori_frame = frame_list_cycle[m_idx].copy()
+                    if (i // batch_size + 1) % 10 == 0:
+                        logger.info(f'[RenderVideo] {len(output_frames)}/{nframes} frames done...')
 
-                    if pred_frame is None or not np.isfinite(pred_frame).all():
-                        batch_results[j] = ori_frame
-                        continue
-                    mouth_half = pred_frame[pred_frame.shape[0] // 2:, :, :]
-                    if np.std(mouth_half) < 4.0 and 90.0 <= np.mean(mouth_half) <= 165.0:
-                        batch_results[j] = ori_frame
-                        continue
+            logger.info(f'[RenderVideo] Inference complete. {len(output_frames)} frames generated.')
 
-                    bbox = coord_list_cycle[m_idx]
-                    x1, y1, x2, y2 = bbox
-                    res_frame = cv2.resize(pred_frame.astype(np.uint8), (x2 - x1, y2 - y1), interpolation=cv2.INTER_LANCZOS4)
-                    mask = mask_list_cycle[m_idx]
-                    mask_crop_box = mask_coords_list_cycle[m_idx]
-                    combine_frame = get_image_blending(ori_frame, res_frame, bbox, mask, mask_crop_box)
-                    gaussian = cv2.GaussianBlur(combine_frame, (0, 0), 1.5)
-                    combine_frame = cv2.addWeighted(combine_frame, 1.3, gaussian, -0.3, 0)
-                    batch_results[j] = combine_frame
+            # 5b. Cooldown cross-fade
+            cooldown_frames = int(0.8 * fps)
+            last_frame = output_frames[-1].astype(np.float32)
+            for k in range(cooldown_frames):
+                m_idx = mirror_index(length, nframes + k)
+                idle_frame = frame_list_cycle[m_idx].astype(np.float32)
+                alpha = k / max(1, cooldown_frames - 1)
+                output_frames.append(((1 - alpha) * last_frame + alpha * idle_frame).astype(np.uint8))
+            logger.info(f'[RenderVideo] Cooldown done. Total: {len(output_frames)} frames')
 
-                for j in silent_indices:
-                    idx = i + j
-                    m_idx = mirror_index(length, idx)
-                    batch_results[j] = frame_list_cycle[m_idx].copy()
+            # 6. Write video
+            if not output_frames:
+                return None
 
-                for j in range(actual_batch):
-                    output_frames.append(batch_results[j])
-
-                if (i // batch_size + 1) % 10 == 0:
-                    logger.info(f'[RenderVideo] {len(output_frames)}/{num_video_frames} frames done...')
-
-        logger.info(f'[RenderVideo] Inference complete. {len(output_frames)} frames generated.')
-
-        # 5b. Cooldown tail: smooth cross-fade from last speaking frame to idle (~0.8s)
-        cooldown_frames = int(0.8 * fps)
-        last_frame = output_frames[-1].astype(np.float32)
-        for k in range(cooldown_frames):
-            m_idx = mirror_index(length, num_video_frames + k)
-            idle_frame = frame_list_cycle[m_idx].astype(np.float32)
-            alpha = k / max(1, cooldown_frames - 1)
-            blend = (1 - alpha) * last_frame + alpha * idle_frame
-            output_frames.append(blend.astype(np.uint8))
-        logger.info(f'[RenderVideo] Cross-faded {cooldown_frames} cooldown frames. Total: {len(output_frames)}')
-
-        # 6. Write video with ffmpeg
-        if output_frames:
             h, w = output_frames[0].shape[:2]
             temp_video = out_path.replace('.mp4', '_temp.mp4')
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            writer = cv2.VideoWriter(temp_video, fourcc, fps, (w, h))
+            writer = cv2.VideoWriter(temp_video, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
             for frame in output_frames:
                 writer.write(frame)
             writer.release()
@@ -504,12 +505,10 @@ async def render_video(request):
             ffmpeg_exe = find_ffmpeg()
             cmd = [
                 ffmpeg_exe, '-y',
-                '-i', temp_video,
-                '-i', temp_audio,
+                '-i', temp_video, '-i', temp_audio,
                 '-c:v', 'libx264', '-preset', 'fast',
                 '-c:a', 'aac', '-b:a', '128k',
-                '-shortest',
-                '-movflags', '+faststart',
+                '-shortest', '-movflags', '+faststart',
                 out_path,
             ]
             try:
@@ -518,21 +517,23 @@ async def render_video(request):
                 logger.info(f'[RenderVideo] Saved: {out_path}')
             except Exception as e:
                 logger.warning(f'[RenderVideo] ffmpeg mux failed ({e}), keeping silent video')
-                logger.info('[RenderVideo] To install ffmpeg on Windows: https://ffmpeg.org/download.html or choco install ffmpeg')
                 if os.path.exists(temp_video):
                     os.rename(temp_video, out_path)
-        else:
-            out_path = None
 
-        if os.path.exists(temp_audio):
-            os.remove(temp_audio)
+            if os.path.exists(temp_audio):
+                os.remove(temp_audio)
+
+            return len(output_frames)
+
+        total_frames = await loop.run_in_executor(None, _blocking_render)
+        out_path = out_path if total_frames else None
 
         return web.Response(
             content_type='application/json',
             text=json.dumps({
                 'code': 0,
                 'video_url': f'/videos/{out_name}' if out_path else None,
-                'frames': len(output_frames),
+                'frames': total_frames or 0,
             })
         )
     except Exception as e:

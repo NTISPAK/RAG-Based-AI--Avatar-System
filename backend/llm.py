@@ -11,84 +11,80 @@ RAG_BACKEND_URL = os.getenv("RAG_BACKEND_URL", "http://127.0.0.1:8000")
 # Language setting - set to 'ur' for Urdu, 'en' for English
 CHAT_LANGUAGE = os.getenv("CHAT_LANGUAGE", "en")
 
+def get_rag_answer(message):
+    """
+    Call the RAG backend and return the full answer text.
+    Returns (answer_text, error_msg). error_msg is None on success.
+    """
+    try:
+        response = requests.post(
+            f"{RAG_BACKEND_URL}/chat",
+            json={"message": message, "language": CHAT_LANGUAGE},
+            timeout=180
+        )
+        if response.status_code == 200:
+            data = response.json()
+            answer = data.get("response", "")
+            if answer:
+                logger.info(f"RAG answer length: {len(answer)} chars")
+                return answer, None
+            return None, "Empty response from RAG backend"
+        return None, f"RAG backend error: {response.status_code}"
+    except requests.exceptions.Timeout:
+        return None, "RAG backend request timed out"
+    except requests.exceptions.ConnectionError:
+        return None, f"Could not connect to RAG backend at {RAG_BACKEND_URL}"
+    except Exception as e:
+        return None, f"Error calling RAG backend: {e}"
+
+
 def llm_response(message, nerfreal: BaseReal):
     """
     Call the RAG backend API and stream the response to the digital human.
     Modified to use NTIS Policy RAG backend instead of OpenAI/Qwen.
     """
     start = time.perf_counter()
-    
-    try:
-        # Call the RAG backend with language parameter
-        response = requests.post(
-            f"{RAG_BACKEND_URL}/chat",
-            json={
-                "message": message,
-                "language": CHAT_LANGUAGE
-            },
-            timeout=180
+
+    answer, error = get_rag_answer(message)
+    end = time.perf_counter()
+    logger.info(f"RAG backend response time: {end-start}s")
+
+    if error:
+        logger.error(error)
+        fallback = (
+            "معذرت، میں جواب تیار نہیں کر سکی۔ براہ کرم دوبارہ کوشش کریں۔"
+            if CHAT_LANGUAGE == "ur" else
+            "I apologize, but I couldn't generate a response."
         )
-        
-        end = time.perf_counter()
-        logger.info(f"RAG backend response time: {end-start}s")
-        
-        if response.status_code == 200:
-            data = response.json()
-            answer = data.get("response", "")
-            
-            if not answer:
-                logger.warning("Empty response from RAG backend")
-                if CHAT_LANGUAGE == "ur":
-                    nerfreal.put_msg_txt("معذرت، میں جواب تیار نہیں کر سکی۔ براہ کرم دوبارہ کوشش کریں۔")
-                else:
-                    nerfreal.put_msg_txt("I apologize, but I couldn't generate a response.")
-                return
-            
-            logger.info(f"RAG answer length: {len(answer)} chars")
-            
-            # Split at sentence boundaries for high-quality TTS output.
-            # Larger chunks produce better intonation and prosody from edge_tts.
-            sentences = re.split(r'(?<=[.!?۔])\s+', answer.strip())
-            
-            # Merge very short sentences together (< 40 chars) for smoother speech
-            chunks = []
-            buf = ""
-            for s in sentences:
-                if buf and len(buf) + len(s) > 200:
-                    chunks.append(buf.strip())
-                    buf = s
-                else:
-                    buf = (buf + " " + s).strip() if buf else s
-            if buf.strip():
-                chunks.append(buf.strip())
-            
-            for chunk in chunks:
-                if not chunk:
-                    continue
-                logger.info(f"Sending chunk ({len(chunk)} chars): {chunk[:80]}")
-                nerfreal.put_msg_txt(chunk)
+        nerfreal.put_msg_txt(fallback)
+        return
+
+    if not answer:
+        fallback = (
+            "معذرت، میں جواب تیار نہیں کر سکی۔ براہ کرم دوبارہ کوشش کریں۔"
+            if CHAT_LANGUAGE == "ur" else
+            "I apologize, but I couldn't generate a response."
+        )
+        nerfreal.put_msg_txt(fallback)
+        return
+
+    # Split at sentence boundaries for high-quality TTS output.
+    sentences = re.split(r'(?<=[.!?۔])\s+', answer.strip())
+
+    # Merge very short sentences together for smoother speech
+    chunks = []
+    buf = ""
+    for s in sentences:
+        if buf and len(buf) + len(s) > 200:
+            chunks.append(buf.strip())
+            buf = s
         else:
-            logger.error(f"RAG backend error: {response.status_code} - {response.text}")
-            if CHAT_LANGUAGE == "ur":
-                nerfreal.put_msg_txt("معذرت، آپ کی درخواست پر عمل کرنے میں خرابی ہوئی۔ براہ کرم دوبارہ کوشش کریں۔")
-            else:
-                nerfreal.put_msg_txt("I apologize, but I encountered an error processing your request.")
-            
-    except requests.exceptions.Timeout:
-        logger.error("RAG backend request timed out")
-        if CHAT_LANGUAGE == "ur":
-            nerfreal.put_msg_txt("معذرت، درخواست کا وقت ختم ہو گیا۔ براہ کرم دوبارہ کوشش کریں۔")
-        else:
-            nerfreal.put_msg_txt("I apologize, but the request timed out. Please try again.")
-    except requests.exceptions.ConnectionError:
-        logger.error(f"Could not connect to RAG backend at {RAG_BACKEND_URL}")
-        if CHAT_LANGUAGE == "ur":
-            nerfreal.put_msg_txt("معذرت، بیک اینڈ سروس سے رابطہ نہیں ہو سکا۔ براہ کرم دوبارہ کوشش کریں۔")
-        else:
-            nerfreal.put_msg_txt("I apologize, but I cannot connect to the backend service.")
-    except Exception as e:
-        logger.exception(f"Error calling RAG backend: {e}")
-        if CHAT_LANGUAGE == "ur":
-            nerfreal.put_msg_txt("معذرت، ایک غیر متوقع خرابی ہوئی۔ براہ کرم دوبارہ کوشش کریں۔")
-        else:
-            nerfreal.put_msg_txt("I apologize, but an unexpected error occurred.")    
+            buf = (buf + " " + s).strip() if buf else s
+    if buf.strip():
+        chunks.append(buf.strip())
+
+    for chunk in chunks:
+        if not chunk:
+            continue
+        logger.info(f"Sending chunk ({len(chunk)} chars): {chunk[:80]}")
+        nerfreal.put_msg_txt(chunk)    
