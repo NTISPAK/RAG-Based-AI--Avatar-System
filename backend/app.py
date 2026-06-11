@@ -465,10 +465,14 @@ async def render_video(request):
                             continue
                         bbox = coord_list_cycle[m_idx]
                         x1, y1, x2, y2 = bbox
-                        res_frame = cv2.resize(pred_frame.astype(np.uint8), (x2 - x1, y2 - y1), interpolation=cv2.INTER_LANCZOS4)
-                        combine_frame = get_image_blending(ori_frame, res_frame, bbox, mask_list_cycle[m_idx], mask_coords_list_cycle[m_idx])
-                        gaussian = cv2.GaussianBlur(combine_frame, (0, 0), 1.5)
-                        batch_results[j] = cv2.addWeighted(combine_frame, 1.3, gaussian, -0.3, 0)
+                        try:
+                            res_frame = cv2.resize(pred_frame.astype(np.uint8), (x2 - x1, y2 - y1), interpolation=cv2.INTER_LANCZOS4)
+                            combine_frame = get_image_blending(ori_frame, res_frame, bbox, mask_list_cycle[m_idx], mask_coords_list_cycle[m_idx])
+                            gaussian = cv2.GaussianBlur(combine_frame, (0, 0), 1.5)
+                            batch_results[j] = cv2.addWeighted(combine_frame, 1.3, gaussian, -0.3, 0)
+                        except (MemoryError, np.core._exceptions._ArrayMemoryError) as mem_err:
+                            logger.warning(f'[RenderVideo] MemoryError on frame {idx}, using original frame: {mem_err}')
+                            batch_results[j] = ori_frame
 
                     for j in silent_indices:
                         batch_results[j] = frame_list_cycle[mirror_index(length, i + j)].copy()
@@ -476,7 +480,14 @@ async def render_video(request):
                     for j in range(actual_batch):
                         output_frames.append(batch_results[j])
 
-                    if (i // batch_size + 1) % 10 == 0:
+                    # Force garbage collection every 50 batches to prevent Windows OOM
+                    if (i // batch_size + 1) % 50 == 0:
+                        import gc
+                        gc.collect()
+                        if hasattr(torch, 'cuda') and torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                        logger.info(f'[RenderVideo] {len(output_frames)}/{nframes} frames done (gc)...')
+                    elif (i // batch_size + 1) % 10 == 0:
                         logger.info(f'[RenderVideo] {len(output_frames)}/{nframes} frames done...')
 
             logger.info(f'[RenderVideo] Inference complete. {len(output_frames)} frames generated.')
