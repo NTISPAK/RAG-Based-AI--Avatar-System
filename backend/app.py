@@ -412,8 +412,14 @@ async def render_video(request):
                 res = idx % n
                 return res if turn % 2 == 0 else n - res - 1
 
-            # 5. Batch inference + compositing
-            output_frames = []
+            # 5. Batch inference + compositing — write directly to video to avoid RAM OOM
+            frame_shape = frame_list_cycle[0].shape
+            h, w = frame_shape[:2]
+            temp_video = out_path.replace('.mp4', '_temp.mp4')
+            writer = cv2.VideoWriter(temp_video, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+            last_written = None
+            written_count = 0
+
             with torch.no_grad():
                 for i in range(0, nframes, batch_size):
                     batch_end = min(i + batch_size, nframes)
@@ -450,67 +456,60 @@ async def render_video(request):
                         pred_latents = pred_latents.float().clamp(-10, 10)
                         recon = vae.decode_latents(pred_latents)
 
-                    batch_results = {}
+                    # Process speaking frames
                     for batch_j, j in enumerate(speaking_indices):
                         idx = i + j
                         m_idx = mirror_index(length, idx)
                         pred_frame = recon[batch_j]
-                        ori_frame = frame_list_cycle[m_idx].copy()
-                        if pred_frame is None or not np.isfinite(pred_frame).all():
-                            batch_results[j] = ori_frame
-                            continue
-                        mouth_half = pred_frame[pred_frame.shape[0] // 2:, :, :]
-                        if np.std(mouth_half) < 4.0 and 90.0 <= np.mean(mouth_half) <= 165.0:
-                            batch_results[j] = ori_frame
-                            continue
-                        bbox = coord_list_cycle[m_idx]
-                        x1, y1, x2, y2 = bbox
-                        try:
-                            res_frame = cv2.resize(pred_frame.astype(np.uint8), (x2 - x1, y2 - y1), interpolation=cv2.INTER_LANCZOS4)
-                            combine_frame = get_image_blending(ori_frame, res_frame, bbox, mask_list_cycle[m_idx], mask_coords_list_cycle[m_idx])
-                            gaussian = cv2.GaussianBlur(combine_frame, (0, 0), 1.5)
-                            batch_results[j] = cv2.addWeighted(combine_frame, 1.3, gaussian, -0.3, 0)
-                        except (MemoryError, np.core._exceptions._ArrayMemoryError) as mem_err:
-                            logger.warning(f'[RenderVideo] MemoryError on frame {idx}, using original frame: {mem_err}')
-                            batch_results[j] = ori_frame
+                        ori_frame = frame_list_cycle[m_idx]
+                        out_frame = ori_frame
+                        if pred_frame is not None and np.isfinite(pred_frame).all():
+                            mouth_half = pred_frame[pred_frame.shape[0] // 2:, :, :]
+                            if not (np.std(mouth_half) < 4.0 and 90.0 <= np.mean(mouth_half) <= 165.0):
+                                bbox = coord_list_cycle[m_idx]
+                                x1, y1, x2, y2 = bbox
+                                try:
+                                    res_frame = cv2.resize(pred_frame.astype(np.uint8), (x2 - x1, y2 - y1), interpolation=cv2.INTER_LANCZOS4)
+                                    combine_frame = get_image_blending(ori_frame, res_frame, bbox, mask_list_cycle[m_idx], mask_coords_list_cycle[m_idx])
+                                    gaussian = cv2.GaussianBlur(combine_frame, (0, 0), 1.5)
+                                    out_frame = cv2.addWeighted(combine_frame, 1.3, gaussian, -0.3, 0)
+                                except MemoryError:
+                                    logger.warning(f'[RenderVideo] MemoryError on speaking frame {idx}, using original')
+                        writer.write(out_frame)
+                        last_written = out_frame
 
+                    # Process silent frames
                     for j in silent_indices:
-                        batch_results[j] = frame_list_cycle[mirror_index(length, i + j)].copy()
+                        m_idx = mirror_index(length, i + j)
+                        writer.write(frame_list_cycle[m_idx])
+                        last_written = frame_list_cycle[m_idx]
 
-                    for j in range(actual_batch):
-                        output_frames.append(batch_results[j])
+                    written_count += actual_batch
 
-                    # Force garbage collection every 50 batches to prevent Windows OOM
+                    # GC + cache clear every 50 batches
                     if (i // batch_size + 1) % 50 == 0:
                         import gc
                         gc.collect()
                         if hasattr(torch, 'cuda') and torch.cuda.is_available():
                             torch.cuda.empty_cache()
-                        logger.info(f'[RenderVideo] {len(output_frames)}/{nframes} frames done (gc)...')
+                        logger.info(f'[RenderVideo] {written_count}/{nframes} frames done (gc)...')
                     elif (i // batch_size + 1) % 10 == 0:
-                        logger.info(f'[RenderVideo] {len(output_frames)}/{nframes} frames done...')
+                        logger.info(f'[RenderVideo] {written_count}/{nframes} frames done...')
 
-            logger.info(f'[RenderVideo] Inference complete. {len(output_frames)} frames generated.')
+            logger.info(f'[RenderVideo] Inference complete. {written_count} frames written.')
 
-            # 5b. Cooldown cross-fade
-            cooldown_frames = int(0.8 * fps)
-            last_frame = output_frames[-1].astype(np.float32)
-            for k in range(cooldown_frames):
-                m_idx = mirror_index(length, nframes + k)
-                idle_frame = frame_list_cycle[m_idx].astype(np.float32)
-                alpha = k / max(1, cooldown_frames - 1)
-                output_frames.append(((1 - alpha) * last_frame + alpha * idle_frame).astype(np.uint8))
-            logger.info(f'[RenderVideo] Cooldown done. Total: {len(output_frames)} frames')
-
-            # 6. Write video
-            if not output_frames:
-                return None
-
-            h, w = output_frames[0].shape[:2]
-            temp_video = out_path.replace('.mp4', '_temp.mp4')
-            writer = cv2.VideoWriter(temp_video, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-            for frame in output_frames:
-                writer.write(frame)
+            # 5b. Cooldown cross-fade — write directly, never accumulate
+            if last_written is not None:
+                cooldown_frames = int(0.8 * fps)
+                last_f = last_written.astype(np.float32)
+                for k in range(cooldown_frames):
+                    m_idx = mirror_index(length, nframes + k)
+                    idle_f = frame_list_cycle[m_idx].astype(np.float32)
+                    alpha = k / max(1, cooldown_frames - 1)
+                    blend = ((1 - alpha) * last_f + alpha * idle_f).astype(np.uint8)
+                    writer.write(blend)
+                    written_count += 1
+                logger.info(f'[RenderVideo] Cooldown done. Total: {written_count} frames')
             writer.release()
 
             ffmpeg_exe = find_ffmpeg()
@@ -534,7 +533,7 @@ async def render_video(request):
             if os.path.exists(temp_audio):
                 os.remove(temp_audio)
 
-            return len(output_frames)
+            return written_count
 
         total_frames = await loop.run_in_executor(None, _blocking_render)
         out_path = out_path if total_frames else None
