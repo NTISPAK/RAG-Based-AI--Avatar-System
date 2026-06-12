@@ -217,33 +217,35 @@ The avatar will become an **active intermediary** between HR and employees:
 | **HR-to-Employee Broadcast** | HR or department heads send announcements; the avatar generates personalized video messages for each recipient (e.g., "Hi [Name], your leave request has been approved"). |
 | **Ticketing Integration** | Complex issues auto-generate support tickets in HRMS (e.g., BambooHR, Workday) with full conversation context and route to the correct team lead. |
 
-### Phase 3: Facial Recognition
+### Phase 3: Receptionist Intelligence
+
+The avatar's **primary role is receptionist** — greeting visitors, answering customer questions, and routing inquiries. Facial recognition and employee features exist purely to help the receptionist serve customers better:
 
 | Feature | Description |
 |---------|-------------|
-| **Employee Identification** | Camera identifies who is approaching the screen. The avatar greets them by name and loads their role/permissions ("Good morning, Ahmed. How can I help you today?") |
-| **Role-Based Routing** | Identified users are routed to their department's document corpus. A Visa Team member gets visa policy answers; a Tech Team member gets IT policy answers — all from the same avatar. |
-| **Access Control** | The avatar only responds to registered personnel. Unauthorized users are politely redirected or shown a generic welcome message. |
-| **Attendance Verification** | Facial recognition logs employee presence for attendance tracking. |
-| **Emotion Detection** | Analyzes facial expressions to detect frustration or confusion, escalating to the appropriate human department head if needed. |
+| **Visitor Recognition** | Camera identifies walk-in customers or returning visitors. The avatar greets them by name ("Welcome back, Mr. Khan. Shall I continue your visa application?") and loads their case history. |
+| **Employee Escort** | When a staff member (HR, Tech, Visa Team) approaches, the avatar recognizes them, switches to internal mode, and allows them to update policies, check customer queues, or broadcast announcements — all without leaving the reception desk. |
+| **Frustration Detection** | Analyzes facial expressions of waiting customers. If someone appears confused or angry, the avatar immediately escalates to a human receptionist or the relevant department head. |
+| **Access Control** | Unregistered visitors get a generic welcome and basic FAQ. Registered customers and staff get personalized, context-aware service. |
+| **Attendance Logging** | Recognizes staff and logs their presence automatically — one less task for the human receptionist to handle. |
 
-**Technology stack for facial recognition:**
+**Technology stack:**
 - **Face embedding**: InsightFace or DeepFace (ArcFace model)
-- **Database**: SQLite or Qdrant for employee face vectors
+- **Database**: SQLite or Qdrant for face vectors
 - **Real-time detection**: MediaPipe Face Mesh or RetinaFace
-- **Training**: One-shot learning from a single employee photo
+- **Training**: One-shot learning from a single photo
 
-### Phase 4: Role-Based Access & Communication Hub
+### Phase 4: Smart Reception Hub
 
-The single avatar becomes a **centralized communication hub** for the entire organization:
+The avatar becomes a **smart reception desk** — the first point of contact for everyone entering the office. Internal features support its customer-facing mission:
 
 | Feature | Description |
 |---------|-------------|
-| **Single Avatar, Multiple Roles** | One avatar serves everyone. It detects who is speaking and switches context automatically (CEO dashboard, HR policies, Visa Team SOPs, Tech Team runbooks). |
-| **Inter-Department Messaging** | The avatar can relay messages between departments. For example: a Visa Team member asks the avatar to notify Tech Support about a system issue, and the avatar delivers a video message to the Tech Team lead. |
-| **CEO Command Channel** | The CEO can issue high-priority directives through the avatar, which are broadcast as personalized video messages to all relevant teams. |
-| **Handoff Protocol** | When the avatar cannot answer or detects distress, it transfers to the appropriate human department lead with full conversation context. |
-| **Multi-Modal Input** | Accept voice, text, and image uploads (e.g., an employee submits a photo of a visa document for the avatar to read and process). |
+| **Single Receptionist, Many Hats** | The same virtual receptionist greets customers, helps staff with internal queries, and routes messages — all from one screen at the front desk. |
+| **Customer-to-Department Relay** | A customer asks about a technical issue; the avatar summarizes the request and sends a video briefing to the Tech Team lead, then informs the customer that help is on the way. |
+| **Staff Announcements** | HR or the CEO can ask the avatar to broadcast a message (e.g., "The visa team is running 10 minutes behind schedule") to waiting customers via the reception screen. |
+| **Human Handoff** | When the avatar cannot answer, detects a frustrated customer, or receives a VIP arrival alert, it immediately calls over the human receptionist or the right department head. |
+| **Multi-Modal Customer Intake** | Customers can show a photo of a document, speak in Urdu, or type their query — the avatar handles all inputs at the reception desk. |
 
 ---
 
