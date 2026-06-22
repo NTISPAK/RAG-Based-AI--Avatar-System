@@ -45,7 +45,7 @@ cat .env
 | `QDRANT_URL` | Qdrant endpoint | `http://localhost:6333` |
 | `COLLECTION_NAME` | Vector collection name | `policy_docs` |
 | `ENABLE_TRANSLATION` | Enable Urdu translation | `true` |
-| `DEFAULT_LANGUAGE` | Default chat language | `en` |
+| `DEFAULT_LANGUAGE` | Default chat language | `ur` |
 | `SUPPORTED_LANGUAGES` | Comma-separated langs | `en,ur` |
 
 ## 2. Install Dependencies

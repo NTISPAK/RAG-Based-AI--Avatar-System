@@ -25,7 +25,7 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "policy_docs")
 ENABLE_TRANSLATION = os.getenv("ENABLE_TRANSLATION", "true").lower() == "true"
-DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "en")
+DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "ur")
 SUPPORTED_LANGUAGES = os.getenv("SUPPORTED_LANGUAGES", "en,ur").split(",")
 
 

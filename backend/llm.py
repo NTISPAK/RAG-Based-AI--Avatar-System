@@ -9,7 +9,7 @@ from logger import logger
 RAG_BACKEND_URL = os.getenv("RAG_BACKEND_URL", "http://127.0.0.1:8000")
 
 # Language setting - set to 'ur' for Urdu, 'en' for English
-CHAT_LANGUAGE = os.getenv("CHAT_LANGUAGE", "en")
+CHAT_LANGUAGE = os.getenv("CHAT_LANGUAGE", "ur")
 
 def get_rag_answer(message):
     """
