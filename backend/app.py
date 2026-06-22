@@ -603,7 +603,7 @@ if __name__ == '__main__':
     parser.add_argument('--customvideo_config', type=str, default='', help="custom action json")
 
     parser.add_argument('--tts', type=str, default='edgetts', help="tts service type")
-    parser.add_argument('--REF_FILE', type=str, default="en-US-JennyNeural",help="Voice model ID for edgetts")
+    parser.add_argument('--REF_FILE', type=str, default="ur-PK-UzmaNeural",help="Voice model ID for edgetts")
     parser.add_argument('--REF_TEXT', type=str, default=None)
     parser.add_argument('--TTS_SERVER', type=str, default='http://127.0.0.1:9880')
 

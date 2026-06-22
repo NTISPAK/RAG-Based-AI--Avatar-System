@@ -201,7 +201,7 @@ python app.py \
     --avatar_id indian_female \
     --batch_size 8 \
     --tts edgetts \
-    --REF_FILE en-IN-NeerjaNeural \
+    --REF_FILE ur-PK-UzmaNeural \
     --transport webrtc \
     --listenport 8010
 ```
@@ -214,7 +214,7 @@ python app.py \
 | `--avatar_id` | `avator_1` | Avatar folder in `data/avatars/` |
 | `--batch_size` | `16` | Inference batch size (lower = less VRAM) |
 | `--tts` | `edgetts` | TTS engine (`edgetts`) |
-| `--REF_FILE` | `en-US-JennyNeural` | Edge TTS voice ID |
+| `--REF_FILE` | `ur-PK-UzmaNeural` | Edge TTS voice ID |
 | `--transport` | `rtcpush` | Transport (`webrtc`, `rtcpush`, `rtmp`) |
 | `--listenport` | `8010` | HTTP/WebRTC server port |
 | `--max_session` | `1` | Max concurrent WebRTC sessions |
@@ -278,7 +278,7 @@ python -m uvicorn main:app --reload --port 8000
 
 # Terminal 3: Avatar Server
 cd backend
-python app.py --model musetalk --avatar_id indian_female --batch_size 8 --tts edgetts --REF_FILE en-IN-NeerjaNeural --transport webrtc --listenport 8010
+python app.py --model musetalk --avatar_id indian_female --batch_size 8 --tts edgetts --REF_FILE ur-PK-UzmaNeural --transport webrtc --listenport 8010
 
 # Browser: http://localhost:8010/webrtcapi.html
 ```
