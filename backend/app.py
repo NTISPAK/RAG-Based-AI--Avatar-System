@@ -383,6 +383,26 @@ async def render_video(request):
         def _blocking_render():
             from musetalk.utils.blending import get_image_blending
 
+            # Initialize GFPGAN face restoration if requested
+            face_enhancer = None
+            if opt and getattr(opt, 'enhance', False):
+                try:
+                    from gfpgan import GFPGANer
+                    model_path = os.path.join(MODELS_DIR, 'gfpgan', 'GFPGANv1.4.pth')
+                    if os.path.exists(model_path):
+                        face_enhancer = GFPGANer(
+                            model_path=model_path,
+                            upscale=1,
+                            arch='clean',
+                            channel_only=False,
+                            bg_upsampler=None
+                        )
+                        logger.info('[RenderVideo] GFPGAN face enhancement enabled')
+                    else:
+                        logger.warning(f'[RenderVideo] GFPGAN model not found at {model_path}, skipping enhancement')
+                except ImportError:
+                    logger.warning('[RenderVideo] gfpgan not installed, run: pip install gfpgan')
+
             # 2. Load audio
             wav, _ = librosa.load(temp_audio, sr=16000)
             audio_duration = len(wav) / 16000.0
@@ -475,6 +495,21 @@ async def render_video(request):
                                     out_frame = cv2.addWeighted(combine_frame, 1.3, gaussian, -0.3, 0)
                                 except MemoryError:
                                     logger.warning(f'[RenderVideo] MemoryError on speaking frame {idx}, using original')
+                        # Apply GFPGAN face restoration if enabled (only on modified frames)
+                        if face_enhancer is not None and out_frame is not ori_frame:
+                            try:
+                                x1f, y1f, x2f, y2f = bbox
+                                margin = 20
+                                x1c = max(0, x1f - margin)
+                                y1c = max(0, y1f - margin)
+                                x2c = min(out_frame.shape[1], x2f + margin)
+                                y2c = min(out_frame.shape[0], y2f + margin)
+                                face_crop = out_frame[y1c:y2c, x1c:x2c]
+                                _, restored_crop, _ = face_enhancer.enhance(face_crop, has_aligned=False, only_center_face=False)
+                                if restored_crop is not None and restored_crop.shape == face_crop.shape:
+                                    out_frame[y1c:y2c, x1c:x2c] = restored_crop
+                            except Exception as e:
+                                logger.warning(f'[RenderVideo] GFPGAN enhancement failed on frame {idx}: {e}')
                         writer.write(out_frame)
                         last_written = out_frame
 
@@ -604,6 +639,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--tts', type=str, default='edgetts', help="tts service type")
     parser.add_argument('--REF_FILE', type=str, default="ur-PK-UzmaNeural",help="Voice model ID for edgetts")
+    parser.add_argument('--enhance', action='store_true', help="Apply GFPGAN face restoration to pre-rendered frames (slower, higher quality)")
     parser.add_argument('--REF_TEXT', type=str, default=None)
     parser.add_argument('--TTS_SERVER', type=str, default='http://127.0.0.1:9880')
 

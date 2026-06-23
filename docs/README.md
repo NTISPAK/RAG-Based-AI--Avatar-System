@@ -122,6 +122,31 @@ python scripts/replace_background.py \
 
 Re-run without `--preview` to apply to all frames.
 
+### Optional: Face Enhancement (GFPGAN)
+
+For significantly higher quality pre-rendered videos, install GFPGAN face restoration:
+
+```bash
+pip install gfpgan
+```
+
+Download the model weights:
+
+```bash
+mkdir -p backend/models/gfpgan
+# Download GFPGANv1.4.pth from:
+# https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth
+# Place it at: backend/models/gfpgan/GFPGANv1.4.pth
+```
+
+Enable it when starting the server:
+
+```bash
+python app.py --model musetalk --avatar_id indian_female --enhance ...
+```
+
+**Trade-off:** ~5-10x slower rendering, but face details (eyes, teeth, skin texture) are dramatically sharper. Only affects **Pre-render Mode**.
+
 ## 5. Start Qdrant (Vector DB)
 
 ### Option A: Docker (recommended)
@@ -215,6 +240,7 @@ python app.py \
 | `--batch_size` | `16` | Inference batch size (lower = less VRAM) |
 | `--tts` | `edgetts` | TTS engine (`edgetts`) |
 | `--REF_FILE` | `ur-PK-UzmaNeural` | Edge TTS voice ID |
+| `--enhance` | `false` | Apply GFPGAN face restoration to pre-rendered frames (slower, higher quality) |
 | `--transport` | `rtcpush` | Transport (`webrtc`, `rtcpush`, `rtmp`) |
 | `--listenport` | `8010` | HTTP/WebRTC server port |
 | `--max_session` | `1` | Max concurrent WebRTC sessions |
